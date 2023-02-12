@@ -17,15 +17,17 @@
 
 use crate::device::{DeviceId, Key, MouseButton};
 
+mod config;
 mod ctx;
 
+pub use config::*;
 pub use ctx::*;
 
 /// The result of a call to [`App::tick`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Tick {
+pub enum Tick<O> {
     /// Indicates that the application should stop.
-    Stop,
+    Stop(O),
     /// The application should continue executing.
     ///
     /// When new events are received, the application processes them and the [`App::tick`] function
@@ -47,6 +49,8 @@ pub trait App: Sized {
     type Error;
     /// An input argument passed to [`App::create`].
     type Args;
+    /// The output of the application, returned from the [`run`] function.
+    type Output;
 
     /// Creates a new application.
     fn create(args: Self::Args, ctx: &Ctx) -> Result<Self, Self::Error>;
@@ -96,5 +100,5 @@ pub trait App: Sized {
     fn text(&mut self, ctx: &Ctx, text: &str) {}
 
     /// Called when the application should close.
-    fn tick(&mut self, ctx: &Ctx) -> Tick;
+    fn tick(&mut self, ctx: &Ctx) -> Tick<Self::Output>;
 }

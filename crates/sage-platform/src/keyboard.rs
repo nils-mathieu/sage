@@ -17,6 +17,8 @@
 //! meaning, you should use the [`ScanCode`] type. Conversly, if you need the know what key the
 //! user *meant* to press, then the [`Key`] enumeration is a better choice.
 
+use std::fmt;
+
 /// Keyboard keys.
 ///
 /// # Symbolic Keys
@@ -269,27 +271,27 @@ pub enum Key {
     ///
     /// This key is sometimes named **Return**.
     #[doc(alias = "Return")]
-    NumpadEnter,
+    KeypadEnter,
     /// The **0** key, on the numeric keypad.
-    Numpad0,
+    Keypad0,
     /// The **1** key, on the numeric keypad.
-    Numpad1,
+    Keypad1,
     /// The **2** key, on the numeric keypad.
-    Numpad2,
+    Keypad2,
     /// The **3** key, on the numeric keypad.
-    Numpad3,
+    Keypad3,
     /// The **4** key, on the numeric keypad.
-    Numpad4,
+    Keypad4,
     /// The **5** key, on the numeric keypad.
-    Numpad5,
+    Keypad5,
     /// The **6** key, on the numeric keypad.
-    Numpad6,
+    Keypad6,
     /// The **7** key, on the numeric keypad.
-    Numpad7,
+    Keypad7,
     /// The **8** key, on the numeric keypad.
-    Numpad8,
+    Keypad8,
     /// The **9** key, on the numeric keypad.
-    Numpad9,
+    Keypad9,
 }
 
 /// Physical keyboard keys.
@@ -306,5 +308,227 @@ pub enum Key {
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ScanCode(u32);
 
+impl ScanCode {
+    /// Creates a new [`ScanCode`] instance from the provided bytes.
+    ///
+    /// Note the actual representation of a [`ScanCode`] is platform-dependent, and one should
+    /// never actually need to create a [`ScanCode`] instance from raw bytes. This is mostly here
+    /// for the sake of completeness.
+    #[inline(always)]
+    pub const fn from_raw(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Returns the raw bytes of this [`ScanCode`].
+    ///
+    /// Note that the returned value is platform-dependent, and should not be used for
+    /// serialization. This will usually represent the make-code of the represented key, but this
+    /// is not guaranteed.
+    #[inline(always)]
+    pub const fn to_raw(self) -> u32 {
+        self.0
+    }
+}
+
 // TODO: provide associated constants for `ScanCode` named after the symbolic meaning of each key
 // on a 101-key standard US keyboard.
+
+macro_rules! scan_code_constants {
+    ( $(
+        $( #[ $args:meta ] )*
+        pub const $name:ident = $value:expr;
+    )*) => {
+        impl ScanCode {
+            $(
+                $( #[ $args ] )*
+                pub const $name: Self = ScanCode::from_raw($value);
+            )*
+        }
+
+        impl fmt::Debug for ScanCode {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                match *self {
+                    $(
+                        Self::$name => f.write_str(stringify!($name)),
+                    )*
+                    _ => f.debug_tuple("ScanCode").field(&self.0).finish(),
+                }
+            }
+        }
+    };
+}
+
+// TODO: figure out whether those codes are actually the same on all platforms. If not, we'll need
+// to make this macro platform-dependent.
+scan_code_constants! {
+    /// The **Escape** key, on 101-key standard US keyboards.
+    pub const ESCAPE = 0x01;
+    /// The **1!** key, on 101-key standard US keyboards.
+    pub const ONE = 0x02;
+    /// The **2@** key, on 101-key standard US keyboards.
+    pub const TWO = 0x03;
+    /// The **3#** key, on 101-key standard US keyboards.
+    pub const THREE = 0x04;
+    /// The **4$** key, on 101-key standard US keyboards.
+    pub const FOUR = 0x05;
+    /// The **5%** key, on 101-key standard US keyboards.
+    pub const FIVE = 0x06;
+    /// The **6^** key, on 101-key standard US keyboards.
+    pub const SIX = 0x07;
+    /// The **7&** key, on 101-key standard US keyboards.
+    pub const SEVEN = 0x08;
+    /// The **8&** key, on 101-key standard US keyboards.
+    pub const EIGHT = 0x09;
+    /// The **9(** key, on 101-key standard US keyboards.
+    pub const NINE = 0x0A;
+    /// The **0)** key, on 101-key standard US keyboards.
+    pub const ZERO = 0x0B;
+    /// The **-/** key, on 101-key standard US keyboards.
+    pub const MINUS = 0x0C;
+    /// The **=+** key, on 101-key standard US keyboards.
+    pub const EQUALS = 0x0D;
+    /// The **Backspace** key, on 101-key standard US keyboards.
+    pub const BACKSPACE = 0x0E;
+    /// The **Tab** key, on 101-key standard US keyboards.
+    pub const TAB = 0x0F;
+    /// The **Q** key, on 101-key standard US keyboards.
+    pub const Q = 0x10;
+    /// The **W** key, on 101-key standard US keyboards.
+    pub const W = 0x11;
+    /// The **E** key, on 101-key standard US keyboards.
+    pub const E = 0x12;
+    /// The **R** key, on 101-key standard US keyboards.
+    pub const R = 0x13;
+    /// The **T** key, on 101-key standard US keyboards.
+    pub const T = 0x14;
+    /// The **Y** key, on 101-key standard US keyboards.
+    pub const Y = 0x15;
+    /// The **U** key, on 101-key standard US keyboards.
+    pub const U = 0x16;
+    /// The **I** key, on 101-key standard US keyboards.
+    pub const I = 0x17;
+    /// The **O** key, on 101-key standard US keyboards.
+    pub const O = 0x18;
+    /// The **P** key, on 101-key standard US keyboards.
+    pub const P = 0x19;
+    /// The **[{** key, on 101-key standard US keyboards.
+    pub const LEFT_BRACKET = 0x1A;
+    /// The **]}** key, on 101-key standard US keyboards.
+    pub const RIGHT_BRACKET = 0x1B;
+    /// The **Enter** key, on 101-key standard US keyboards.
+    pub const ENTER = 0x1C;
+    /// The **Left Control** key, on 101-key standard US keyboards.
+    pub const LEFT_CONTROL = 0x1D;
+    /// The **A** key, on 101-key standard US keyboards.
+    pub const A = 0x1E;
+    /// The **S** key, on 101-key standard US keyboards.
+    pub const S = 0x1F;
+    /// The **D** key, on 101-key standard US keyboards.
+    pub const D = 0x20;
+    /// The **F** key, on 101-key standard US keyboards.
+    pub const F = 0x21;
+    /// The **G** key, on 101-key standard US keyboards.
+    pub const G = 0x22;
+    /// The **H** key, on 101-key standard US keyboards.
+    pub const H = 0x23;
+    /// The **J** key, on 101-key standard US keyboards.
+    pub const J = 0x24;
+    /// The **K** key, on 101-key standard US keyboards.
+    pub const K = 0x25;
+    /// The **L** key, on 101-key standard US keyboards.
+    pub const L = 0x26;
+    /// The **;:** key, on 101-key standard US keyboards.
+    pub const SEMICOLON = 0x27;
+    /// The **'** key, on 101-key standard US keyboards.
+    pub const APOSTROPHE = 0x28;
+    /// The **`~** key, on 101-key standard US keyboards.
+    pub const GRAVE = 0x29;
+    /// The **Left Shift** key, on 101-key standard US keyboards.
+    pub const LEFT_SHIFT = 0x2A;
+    /// The **\|** key, on 101-key standard US keyboards.
+    pub const BACKSLASH = 0x2B;
+    /// The **Z** key, on 101-key standard US keyboards.
+    pub const Z = 0x2C;
+    /// The **X** key, on 101-key standard US keyboards.
+    pub const X = 0x2D;
+    /// The **C** key, on 101-key standard US keyboards.
+    pub const C = 0x2E;
+    /// The **V** key, on 101-key standard US keyboards.
+    pub const V = 0x2F;
+    /// The **B** key, on 101-key standard US keyboards.
+    pub const B = 0x30;
+    /// The **N** key, on 101-key standard US keyboards.
+    pub const N = 0x31;
+    /// The **M** key, on 101-key standard US keyboards.
+    pub const M = 0x32;
+    /// The **,** key, on 101-key standard US keyboards.
+    pub const COMMA = 0x33;
+    /// The **.>** key, on 101-key standard US keyboards.
+    pub const PERIOD = 0x34;
+    /// The **/** key, on 101-key standard US keyboards.
+    pub const SLASH = 0x35;
+    /// The **Right Shift** key, on 101-key standard US keyboards.
+    pub const RIGHT_SHIFT = 0x36;
+    /// The **\*** key, on 101-key standard US keyboards.
+    pub const KEYPAD_ASTERISK = 0x37;
+    /// The **Left Alt** key, on 101-key standard US keyboards.
+    pub const LEFT_ALT = 0x38;
+    /// The **Space** key, on 101-key standard US keyboards.
+    pub const SPACE = 0x39;
+    /// The **Caps Lock** key, on 101-key standard US keyboards.
+    pub const CAPS_LOCK = 0x3A;
+    /// The **F1** key, on 101-key standard US keyboards.
+    pub const F1 = 0x3B;
+    /// The **F2** key, on 101-key standard US keyboards.
+    pub const F2 = 0x3C;
+    /// The **F3** key, on 101-key standard US keyboards.
+    pub const F3 = 0x3D;
+    /// The **F4** key, on 101-key standard US keyboards.
+    pub const F4 = 0x3E;
+    /// The **F5** key, on 101-key standard US keyboards.
+    pub const F5 = 0x3F;
+    /// The **F6** key, on 101-key standard US keyboards.
+    pub const F6 = 0x40;
+    /// The **F7** key, on 101-key standard US keyboards.
+    pub const F7 = 0x41;
+    /// The **F8** key, on 101-key standard US keyboards.
+    pub const F8 = 0x42;
+    /// The **F9** key, on 101-key standard US keyboards.
+    pub const F9 = 0x43;
+    /// The **F10** key, on 101-key standard US keyboards.
+    pub const F10 = 0x44;
+    /// The **Num Lock** key, on 101-key standard US keyboards.
+    pub const NUM_LOCK = 0x45;
+    /// The **Scroll Lock** key, on 101-key standard US keyboards.
+    pub const SCROLL_LOCK = 0x46;
+    /// The **7** key, on 101-key standard US keyboards.
+    pub const KEYPAD_7 = 0x47;
+    /// The **8** key, on 101-key standard US keyboards.
+    pub const KEYPAD_8 = 0x48;
+    /// The **9** key, on 101-key standard US keyboards.
+    pub const KEYPAD_9 = 0x49;
+    /// The **-** key, on 101-key standard US keyboards.
+    pub const KEYPAD_MINUS = 0x4A;
+    /// The **4** key, on 101-key standard US keyboards.
+    pub const KEYPAD_4 = 0x4B;
+    /// The **5** key, on 101-key standard US keyboards.
+    pub const KEYPAD_5 = 0x4C;
+    /// The **6** key, on 101-key standard US keyboards.
+    pub const KEYPAD_6 = 0x4D;
+    /// The **+** key, on 101-key standard US keyboards.
+    pub const KEYPAD_PLUS = 0x4E;
+    /// The **1** key, on 101-key standard US keyboards.
+    pub const KEYPAD_1 = 0x4F;
+    /// The **2** key, on 101-key standard US keyboards.
+    pub const KEYPAD_2 = 0x50;
+    /// The **3** key, on 101-key standard US keyboards.
+    pub const KEYPAD_3 = 0x51;
+    /// The **0** key, on 101-key standard US keyboards.
+    pub const KEYPAD_0 = 0x52;
+    /// The **.** key, on 101-key standard US keyboards.
+    pub const KEYPAD_DECIMAL = 0x53;
+    /// The **F11** key, on 101-key standard US keyboards.
+    pub const F11 = 0x57;
+    /// The **F12** key, on 101-key standard US keyboards.
+    pub const F12 = 0x58;
+}

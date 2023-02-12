@@ -14,9 +14,8 @@ as backward-compatible as possible, but you shouldn't rely on that just now.
 Because it tries to be as modular as possible, there is no single "sage" crate. Instead, you can
 import and choose from the following packages.
 
- * `sage-platform-core` is the main platform abstraction. It defines common types and traits used by
-   other sage windowing abstractions.
- * `sage-platform-windows` abstracts the windowing system of the **Windows** operating system.
+ * `sage-platform` is the main platform abstraction. It provides common event types, ways to
+   represent the state of input devices, as well as ways to create a window for Sage applications.
 
 ## Contributing
 

@@ -532,3 +532,7 @@ scan_code_constants! {
     /// The **F12** key, on 101-key standard US keyboards.
     pub const F12 = 0x58;
 }
+
+/// A unique identifier for a keyboard.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct KeyboardId(());

@@ -6,11 +6,13 @@
 //!
 //! # Application Lifecycle
 //!
-//! The application lifecycle is represented by the [`App`] type. It is responsible for describing
+//! The application lifecycle is represented by the [`App`] trait. It is responsible for describing
 //! how events sent by the operating system should be handled, and when to stop the application.
 //!
 //! Rather than having a single central "Event" type, this trait defines multiple methods that
 //! will be called according to the event type.
+//!
+//! More on that in the documentation for [app].
 //!
 //! # Examples
 //!
@@ -18,33 +20,43 @@
 //!
 //! ```no_run
 //! use sage_platform::app::{App, Ctx, Tick, Config};
-//! use sage_platform::device::{MouseId, MouseButton};
+//! use sage_platform::device::{DeviceId, MouseButton};
 //!
 //! struct MyApp {
 //!     close_requested: bool,
 //! }
 //!
 //! impl App for MyApp {
-//!     fn close_request(&mut self, ctx: &Ctx) {
+//!     type Error = std::convert::Infallible;
+//!     type Args = ();
+//!
+//!     fn create(_: Self::Args, _: &Ctx) -> Result<Self, Self::Error> {
+//!         Ok(Self {
+//!            close_requested: false,
+//!         })
+//!     }
+//!
+//!     fn close_request(&mut self, _: &Ctx) {
 //!         self.close_requested = true;
 //!     }
 //!
-//!     fn mouse_button(&mut self, ctx: &Ctx, _mouse: MouseId, button: MouseButton, now_pressed: bool) {
-//!         if button == MouseButton::Left && now_pressed {
+//!     fn mouse_button(&mut self, _: &Ctx, _: DeviceId, btn: MouseButton, pressed: bool) {
+//!         if btn == MouseButton::Left && pressed {
 //!             println!("Hello, World!");
 //!         }
 //!     }
 //!
-//!     fn tick(&mut self, ctx: &Ctx) -> Tick {
+//!     fn tick(&mut self, _: &Ctx) -> Tick {
 //!         if self.close_requested {
-//!             Tick::Break
+//!             Tick::Stop
 //!         } else {
-//!             Tick::Continue
+//!             Tick::Block
 //!         }
 //!     }
 //! }
 //!
-//! sage_platform::run::<MyApp>(&Config::default());
+//! sage_platform::run::<MyApp>((), &Config::default());
 //! ```
 
+pub mod app;
 pub mod device;

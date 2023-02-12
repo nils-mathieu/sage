@@ -29,3 +29,7 @@ mod pointer;
 
 pub use keyboard::*;
 pub use pointer::*;
+
+/// A unique identifier for an input device.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct DeviceId(());

@@ -1,8 +1,3 @@
-//! Types to represent the state of a pointer (mouse).
-//!
-//! Because most platform translate touch events into mouse events, this module also contains types
-//! to represent the state of a touch screen.
-
 /// A mouse button.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum MouseButton {

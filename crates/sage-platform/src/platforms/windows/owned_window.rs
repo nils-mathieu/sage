@@ -201,7 +201,7 @@ fn register_class(
         hCursor: 0,
         hbrBackground: 0,
         lpszMenuName: core::ptr::null(),
-        lpszClassName: windows_sys::w!("Sage Window"),
+        lpszClassName: windows_sys::w!("Sage Window Class"),
         hIconSm: 0,
     };
 

@@ -6,15 +6,15 @@ use windows_sys::Win32::UI::WindowsAndMessaging::DefWindowProcW;
 use windows_sys::Win32::UI::WindowsAndMessaging::{GetWindowLongPtrW, GWLP_USERDATA};
 use windows_sys::Win32::UI::WindowsAndMessaging::{WM_CLOSE, WM_DESTROY};
 
-use crate::app::{App, Ctx};
+use crate::app::App;
 
-use super::Window;
+use super::Ctx;
 
 /// The signature of a WNDPROC callback.
 pub type WndprocFn = unsafe extern "system" fn(HWND, u32, WPARAM, LPARAM) -> LRESULT;
 
 /// Calls the default window procedure, but checks that the message does not break any invariants
-/// of the [`Window`] type. If it does, the function returns 0.
+/// of the [`Ctx`] type. If it does, the function returns 0.
 ///
 /// # Safety
 ///
@@ -101,10 +101,8 @@ impl<A> State<A> {
         //
         //  We know that **GWLP_USERDATA** contains a valid pointer to us because, well, that's the
         //  thing we just got back.
-        let ctx = Ctx::Windows(unsafe { Window::new(hwnd) });
+        let ctx = crate::app::Ctx::Windows(unsafe { Ctx::new(hwnd) });
 
-        // Let's avoid having to call `GetWindowLongPtrW` again through `window` and make
-        // the dereference ourselves.
         let state = unsafe { &mut *(userdata as *mut State<A>) };
 
         // This function may panic. If it does, we need to store the panic payload in the state

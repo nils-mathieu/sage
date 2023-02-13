@@ -7,13 +7,13 @@ use windows_sys::Win32::Foundation::{HINSTANCE, HWND};
 use crate::app::Config;
 
 use super::wndproc::WndprocFn;
-use super::{wndproc, Error, Window};
+use super::{wndproc, Ctx, Error};
 
 /// Owns a window and its resources.
 ///
 /// This type assumes that its **GWLP_USERDATA** field is set to a valid [`T`] instance. Or a null
 /// pointer.
-pub struct OwnedWindow {
+pub struct Window {
     /// The module instance handle.
     hinstance: HINSTANCE,
     /// The window handle.
@@ -22,8 +22,8 @@ pub struct OwnedWindow {
     class_atom: u16,
 }
 
-impl OwnedWindow {
-    /// Creates a new [`OwnedWindow`].
+impl Window {
+    /// Creates a new [`Window`].
     ///
     /// # Panics
     ///
@@ -53,13 +53,13 @@ impl OwnedWindow {
         })
     }
 
-    /// Returns an exclusive [`Window`] reference to this window.
+    /// Returns an exclusive [`Ctx`] reference to this window.
     #[inline(always)]
-    pub fn as_window(&mut self) -> Window {
+    pub fn as_ctx(&mut self) -> Ctx {
         // SAFETY:
-        //  We are borrowing the `OwnedWindow` mutably, so we know that the created `Window`
+        //  We are borrowing the `Window` mutably, so we know that the created `Ctx`
         //  will remain valid for the lifetime of `self`.
-        unsafe { Window::new(self.hwnd) }
+        unsafe { Ctx::new(self.hwnd) }
     }
 
     /// Sets the **GWLP_USERDATA** field of this window to `userdata`.
@@ -155,7 +155,7 @@ impl OwnedWindow {
     }
 }
 
-impl Drop for OwnedWindow {
+impl Drop for Window {
     fn drop(&mut self) {
         unsafe {
             use windows_sys::Win32::UI::WindowsAndMessaging::{DestroyWindow, UnregisterClassW};

@@ -3,5 +3,5 @@
 #[allow(missing_docs)]
 pub enum Ctx<'a> {
     #[cfg(target_os = "windows")]
-    Windows(crate::windows::Window<'a>),
+    Windows(crate::windows::Ctx<'a>),
 }

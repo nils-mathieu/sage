@@ -1,15 +1,15 @@
 //! Defines windows-specific types and functions to create and manage a single-window application.
 
+mod ctx;
 mod error;
-mod window;
 
+pub use ctx::*;
 pub use error::*;
-pub use window::*;
 use windows_sys::Win32::Foundation::WIN32_ERROR;
 
-use crate::app::{App, Config, Ctx, RunError, Tick};
+use crate::app::{App, Config, RunError, Tick};
 
-use self::owned_window::OwnedWindow;
+use self::owned_window::Window;
 
 mod owned_window;
 mod wndproc;
@@ -21,12 +21,10 @@ mod wndproc;
 /// This function panics if `config.title` contains a null character.
 pub fn run<A: App>(args: A::Args, config: &Config) -> Result<A::Output, RunError<A::Error, Error>> {
     let mut window =
-        OwnedWindow::new(config, wndproc::State::<A>::raw_wndproc).map_err(RunError::Platform)?;
+        Window::new(config, wndproc::State::<A>::raw_wndproc).map_err(RunError::Platform)?;
 
-    let mut state = {
-        let ctx = Ctx::Windows(window.as_window());
-        wndproc::State::new(A::create(args, &ctx).map_err(RunError::App)?)
-    };
+    let app = A::create(args, &crate::app::Ctx::Windows(window.as_ctx())).map_err(RunError::App)?;
+    let mut state = wndproc::State::new(app);
 
     window.set_userdata(&mut state as *mut _ as _);
 
@@ -36,7 +34,10 @@ pub fn run<A: App>(args: A::Args, config: &Config) -> Result<A::Output, RunError
             state.resume_unwind();
         }
 
-        match state.app_mut().tick(&Ctx::Windows(window.as_window())) {
+        match state
+            .app_mut()
+            .tick(&crate::app::Ctx::Windows(window.as_ctx()))
+        {
             Tick::Stop(output) => return Ok(output),
             Tick::Block => {
                 // Wait until a new message is available.

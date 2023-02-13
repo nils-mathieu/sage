@@ -25,10 +25,6 @@ pub struct Window {
 
 impl Window {
     /// Creates a new [`Window`].
-    ///
-    /// # Panics
-    ///
-    /// This function panics if `config.title` contains a null character.
     pub fn new(config: &Config, cback: WndprocFn) -> Result<Self, Error> {
         use windows_sys::Win32::UI::WindowsAndMessaging::{DestroyWindow, UnregisterClassW};
 
@@ -120,10 +116,6 @@ impl Window {
     ///
     /// Note that a single call to this function may cause multiple events to be processed by the
     /// callback function.
-    ///
-    /// # Panics
-    ///
-    /// This function panics if the callback function panicked.
     pub fn get_message(&mut self) -> Result<(), Error> {
         use windows_sys::Win32::UI::WindowsAndMessaging::GetMessageW;
         use windows_sys::Win32::UI::WindowsAndMessaging::MSG;
@@ -247,10 +239,6 @@ fn compute_window_styles(config: &Config) -> (u32, u32) {
 }
 
 /// Creates a new window.
-///
-/// # Panics
-///
-/// This function panics if `config.title` contains a null character.
 fn create_window(hinstance: HINSTANCE, class_atom: u16, config: &Config) -> Result<HWND, Error> {
     use windows_sys::Win32::UI::WindowsAndMessaging::{CreateWindowExW, CW_USEDEFAULT};
 
@@ -263,10 +251,9 @@ fn create_window(hinstance: HINSTANCE, class_atom: u16, config: &Config) -> Resu
         None => (CW_USEDEFAULT, CW_USEDEFAULT),
     };
 
-    assert!(
-        !config.title.contains('\0'),
-        "config.title contains a null character"
-    );
+    if config.title.contains('\0') {
+        return Err(Error::UnsupportedConfig);
+    }
 
     let title = config
         .title

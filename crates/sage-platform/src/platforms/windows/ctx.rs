@@ -22,9 +22,6 @@ impl<'wnd> Ctx<'wnd> {
     /// This function assumes that `hwnd` is a valid window handle, and that it will remain valid
     /// for the lifetime `'wnd`. The "referenced" window must be logically borrowed exclusively
     /// for that lifetime.
-    ///
-    /// The **GWLP_USERDATA** window long pointer is set to the address of a valid [`State`]
-    /// instance. That reference must remain valid and exclusive for the lifetime `'wnd` too.
     #[inline(always)]
     pub(super) const unsafe fn new(hwnd: HWND) -> Self {
         Self {

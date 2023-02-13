@@ -37,3 +37,15 @@ pub struct Config<'a> {
     /// **Default:** `true`
     pub visible: bool,
 }
+
+impl<'a> Default for Config<'a> {
+    fn default() -> Self {
+        Self {
+            title: "Sage Application",
+            size: None,
+            position: None,
+            transparent: false,
+            visible: true,
+        }
+    }
+}

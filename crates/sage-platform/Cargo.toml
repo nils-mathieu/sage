@@ -1,5 +1,12 @@
 [package]
-name = "sage-platform-core"
+name = "sage-platform"
 version = "0.0.1"
 edition = "2021"
 authors = [ "Nils Mathieu <nils.mathieu.contact@gmail.com>" ]
+
+[target.'cfg(target_os = "windows")'.dependencies.windows-sys]
+version = "0.45"
+features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_System_LibraryLoader", "Win32_Graphics_Gdi"]
+
+[dependencies]
+scopeguard = "1"

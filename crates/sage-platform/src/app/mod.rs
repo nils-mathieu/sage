@@ -2,8 +2,8 @@
 //!
 //! # Application Lifecycle
 //!
-//! * An application is initially created by the [`run`] function. It takes a [`Config`] object as
-//! an input, which defines the initial state of the application.
+//! * An application is initially created by the [`App::run`] function. It takes a [`Config`]
+//! object as an input, which defines the initial state of the application.
 //!
 //! * After the platform has been initialized, the [`App::create`] function is called, giving the
 //!   application a chance to initialize its state using the resources provided by the platform.
@@ -16,12 +16,15 @@
 //!   function is called again. More information in the documentation for [`Tick`].
 
 use crate::device::{DeviceId, Key, MouseButton};
+use crate::Error;
 
 mod config;
 mod ctx;
+mod run_error;
 
 pub use config::*;
 pub use ctx::*;
+pub use run_error::*;
 
 /// The result of a call to [`App::tick`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -49,11 +52,17 @@ pub trait App: Sized {
     type Error;
     /// An input argument passed to [`App::create`].
     type Args;
-    /// The output of the application, returned from the [`run`] function.
+    /// The output of the application, returned from the [`App::run`] function.
     type Output;
 
     /// Creates a new application.
     fn create(args: Self::Args, ctx: &Ctx) -> Result<Self, Self::Error>;
+
+    /// Runs this [`App`] on the current platform.
+    fn run(args: Self::Args, config: &Config) -> Result<Self::Output, RunError<Self::Error>> {
+        #[cfg(target_os = "windows")]
+        crate::windows::run::<Self>(args, config).map_err(RunError::map_platform(Error::Windows))
+    }
 
     /// Called when the application should close itself.
     ///

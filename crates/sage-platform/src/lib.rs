@@ -6,8 +6,9 @@
 //!
 //! # Application Lifecycle
 //!
-//! The application lifecycle is represented by the [`App`] trait. It is responsible for describing
-//! how events sent by the operating system should be handled, and when to stop the application.
+//! The application lifecycle is represented by the [`App`](app::App) trait. It is responsible for
+//! describing how events sent by the operating system should be handled, and when to stop the
+//! application.
 //!
 //! Rather than having a single central "Event" type, this trait defines multiple methods that
 //! will be called according to the event type.
@@ -15,8 +16,6 @@
 //! More on that in the documentation for [app].
 //!
 //! # Examples
-//!
-//! Open a simple window and print a message when the user clicks on it:
 //!
 //! ```no_run
 //! use sage_platform::app::{App, Ctx, Tick, Config};
@@ -29,6 +28,7 @@
 //! impl App for MyApp {
 //!     type Error = std::convert::Infallible;
 //!     type Args = ();
+//!     type Output = ();
 //!
 //!     fn create(_: Self::Args, _: &Ctx) -> Result<Self, Self::Error> {
 //!         Ok(Self {
@@ -46,17 +46,28 @@
 //!         }
 //!     }
 //!
-//!     fn tick(&mut self, _: &Ctx) -> Tick {
+//!     fn tick(&mut self, _: &Ctx) -> Tick<Self::Output> {
 //!         if self.close_requested {
-//!             Tick::Stop
+//!             Tick::Stop(())
 //!         } else {
 //!             Tick::Block
 //!         }
 //!     }
 //! }
 //!
-//! sage_platform::run::<MyApp>((), &Config::default());
+//! MyApp::run((), &Config::default()).unwrap();
 //! ```
+
+#![forbid(unsafe_op_in_unsafe_fn)]
+#![warn(missing_docs)]
 
 pub mod app;
 pub mod device;
+
+mod error;
+
+pub use error::*;
+
+#[cfg(target_os = "windows")]
+#[path = "platforms/windows/mod.rs"]
+pub mod windows;

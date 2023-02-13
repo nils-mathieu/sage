@@ -2,6 +2,7 @@ use std::mem::MaybeUninit;
 
 use scopeguard::ScopeGuard;
 
+use windows_sys::Win32::Foundation::{ERROR_CLASS_ALREADY_EXISTS, ERROR_INVALID_PARAMETER};
 use windows_sys::Win32::Foundation::{HINSTANCE, HWND};
 
 use crate::app::Config;
@@ -207,9 +208,11 @@ fn register_class(
     let class_atom = unsafe { RegisterClassExW(&class_info) };
 
     if class_atom == 0 {
-        // TODO: check whether the error is because the class already exists. In that case, return
-        // `Error::ClassAlreadyRegistered`.
-        Err(Error::UnexpectedBehavior)
+        if super::last_error_code() == ERROR_CLASS_ALREADY_EXISTS {
+            Err(Error::ClassAlreadyRegistered)
+        } else {
+            Err(Error::UnexpectedBehavior)
+        }
     } else {
         Ok(class_atom)
     }
@@ -291,7 +294,7 @@ fn create_window(hinstance: HINSTANCE, class_atom: u16, config: &Config) -> Resu
     };
 
     if hwnd == 0 {
-        if super::last_error_code() == 87 {
+        if super::last_error_code() == ERROR_INVALID_PARAMETER {
             Err(Error::UnsupportedConfig)
         } else {
             Err(Error::UnexpectedBehavior)

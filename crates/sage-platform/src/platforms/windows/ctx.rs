@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use windows_sys::Win32::Foundation::HWND;
+use windows_sys::Win32::Foundation::{HINSTANCE, HWND};
 
 /// Represents a live window reference.
 ///
@@ -40,5 +40,31 @@ impl<'wnd> Ctx<'wnd> {
     #[inline(always)]
     pub const fn hwnd(&self) -> HWND {
         self.hwnd
+    }
+
+    /// Returns the [`HINSTANCE`] associated with the window.
+    #[inline(always)]
+    pub fn hinstance(&self) -> HINSTANCE {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{GetWindowLongPtrW, GWLP_HINSTANCE};
+
+        unsafe { GetWindowLongPtrW(self.hwnd, GWLP_HINSTANCE) }
+    }
+}
+
+#[cfg(feature = "raw-window-handle")]
+unsafe impl raw_window_handle::HasRawWindowHandle for Ctx<'_> {
+    fn raw_window_handle(&self) -> raw_window_handle::RawWindowHandle {
+        let mut window = raw_window_handle::Win32WindowHandle::empty();
+        window.hwnd = self.hwnd as *mut std::ffi::c_void;
+        window.hinstance = self.hinstance() as *mut std::ffi::c_void;
+        raw_window_handle::RawWindowHandle::Win32(window)
+    }
+}
+
+#[cfg(feature = "raw-window-handle")]
+unsafe impl raw_window_handle::HasRawDisplayHandle for &Ctx<'_> {
+    fn raw_display_handle(&self) -> raw_window_handle::RawDisplayHandle {
+        let display = raw_window_handle::WindowsDisplayHandle::empty();
+        raw_window_handle::RawDisplayHandle::Windows(display)
     }
 }

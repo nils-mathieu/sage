@@ -4,6 +4,9 @@ version = "0.0.1"
 edition = "2021"
 authors = [ "Nils Mathieu <nils.mathieu.contact@gmail.com>" ]
 
+[features]
+default = ["raw-window-handle"]
+
 [target.'cfg(target_os = "windows")'.dependencies.windows-sys]
 version = "0.45"
 features = [
@@ -14,3 +17,4 @@ features = [
 
 [dependencies]
 scopeguard = "1"
+raw-window-handle = { version = "0.5", optional = true }

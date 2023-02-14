@@ -9,9 +9,9 @@ use windows_sys::Win32::Foundation::WIN32_ERROR;
 
 use crate::app::{App, Config, RunError, Tick};
 
-use self::owned_window::Window;
+use self::window::Window;
 
-mod owned_window;
+mod window;
 mod wndproc;
 
 /// A unique identifier for a device.

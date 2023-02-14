@@ -1,0 +1,5 @@
+[package]
+name = "sage-render"
+version = "0.0.1"
+authors = [ "Nils Mathieu <nils.mathieu.contact@gmail.com>" ]
+edition = "2021"

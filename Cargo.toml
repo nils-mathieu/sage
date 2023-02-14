@@ -1,2 +1,2 @@
 [workspace]
-members = [ "crates/sage-platform" ]
+members = [ "crates/sage-platform", "crates/sage-render" ]

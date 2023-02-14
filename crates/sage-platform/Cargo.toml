@@ -6,7 +6,11 @@ authors = [ "Nils Mathieu <nils.mathieu.contact@gmail.com>" ]
 
 [target.'cfg(target_os = "windows")'.dependencies.windows-sys]
 version = "0.45"
-features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_System_LibraryLoader", "Win32_Graphics_Gdi"]
+features = [
+    "Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_System_LibraryLoader",
+    "Win32_Graphics_Gdi", "Win32_UI_Input", "Win32_Devices_HumanInterfaceDevice",
+    "Win32_UI_Input_KeyboardAndMouse"
+]
 
 [dependencies]
 scopeguard = "1"

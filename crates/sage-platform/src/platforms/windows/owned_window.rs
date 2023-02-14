@@ -26,6 +26,11 @@ pub struct Window {
 impl Window {
     /// Creates a new [`Window`].
     pub fn new(config: &Config, cback: WndprocFn) -> Result<Self, Error> {
+        use windows_sys::Win32::Devices::HumanInterfaceDevice::HID_USAGE_GENERIC_KEYBOARD;
+        use windows_sys::Win32::Devices::HumanInterfaceDevice::HID_USAGE_GENERIC_MOUSE;
+        use windows_sys::Win32::Devices::HumanInterfaceDevice::HID_USAGE_PAGE_GENERIC;
+        use windows_sys::Win32::UI::Input::RegisterRawInputDevices;
+        use windows_sys::Win32::UI::Input::RAWINPUTDEVICE;
         use windows_sys::Win32::UI::WindowsAndMessaging::{DestroyWindow, UnregisterClassW};
 
         let hinstance = get_module_handle()?;
@@ -39,6 +44,33 @@ impl Window {
         let hwnd_guard = scopeguard::guard((), move |()| unsafe {
             DestroyWindow(hwnd);
         });
+
+        // Ensure that the window receives raw WM_INPUT messages.
+        let raw_input_devices = [
+            RAWINPUTDEVICE {
+                usUsagePage: HID_USAGE_PAGE_GENERIC,
+                usUsage: HID_USAGE_GENERIC_KEYBOARD,
+                dwFlags: 0,
+                hwndTarget: hwnd,
+            },
+            RAWINPUTDEVICE {
+                usUsagePage: HID_USAGE_PAGE_GENERIC,
+                usUsage: HID_USAGE_GENERIC_MOUSE,
+                dwFlags: 0,
+                hwndTarget: hwnd,
+            },
+        ];
+        let ret = unsafe {
+            RegisterRawInputDevices(
+                raw_input_devices.as_ptr(),
+                raw_input_devices.len() as _,
+                std::mem::size_of::<RAWINPUTDEVICE>() as _,
+            )
+        };
+
+        if ret == windows_sys::Win32::Foundation::FALSE {
+            return Err(Error::UnexpectedBehavior);
+        }
 
         ScopeGuard::into_inner(class_atom_guard);
         ScopeGuard::into_inner(hwnd_guard);

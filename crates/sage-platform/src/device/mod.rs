@@ -32,4 +32,8 @@ pub use pointer::*;
 
 /// A unique identifier for an input device.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct DeviceId(());
+#[allow(missing_docs)]
+pub enum DeviceId {
+    #[cfg(target_os = "windows")]
+    Windows(crate::windows::DeviceId),
+}

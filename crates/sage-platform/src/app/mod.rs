@@ -15,7 +15,7 @@
 //!   returns [`Tick::Poll`], the lifecycle repeats; events are processed, and the [`App::tick`]
 //!   function is called again. More information in the documentation for [`Tick`].
 
-use crate::device::{DeviceId, Key, MouseButton};
+use crate::device::{DeviceId, Key, MouseButton, ScanCode};
 use crate::Error;
 
 mod config;
@@ -81,7 +81,15 @@ pub trait App: Sized {
     fn position(&mut self, ctx: &Ctx, x: i32, y: i32) {}
 
     /// Called when a keyboard key has been pressed.
-    fn keyboard_key(&mut self, ctx: &Ctx, dev: DeviceId, key: Key, now_pressed: bool) {}
+    fn keyboard_key(
+        &mut self,
+        ctx: &Ctx,
+        dev: DeviceId,
+        key: Option<Key>,
+        scan_code: ScanCode,
+        now_pressed: bool,
+    ) {
+    }
 
     /// Called when a mouse button has been pressed.
     fn mouse_button(&mut self, ctx: &Ctx, dev: DeviceId, button: MouseButton, now_pressed: bool) {}
@@ -90,7 +98,9 @@ pub trait App: Sized {
     ///
     /// Note that the `dx` and `dy` values are relative to the previous position of the mouse, and
     /// should not be used to compute the position of a cursor. If you need the position of the
-    /// cursor, use the [`App::cursor`] function instead.
+    /// cursor, use the [`App::cursor`] function instead. Specifically, the motion described by
+    /// this event is not subject to an eventual cursor acceleration applied by the operating
+    /// system.
     fn mouse_motion(&mut self, ctx: &Ctx, dev: DeviceId, dx: i32, dy: i32) {}
 
     /// Called when the mouse wheel has been scrolled.

@@ -14,6 +14,9 @@ use self::owned_window::Window;
 mod owned_window;
 mod wndproc;
 
+/// A unique identifier for a device.
+pub type DeviceId = windows_sys::Win32::Foundation::HANDLE;
+
 /// Starts an application on the Windows platform.
 ///
 /// # Panics

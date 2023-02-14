@@ -15,4 +15,5 @@ mod error;
 
 pub use error::*;
 
+pub mod gpu;
 pub mod instance;

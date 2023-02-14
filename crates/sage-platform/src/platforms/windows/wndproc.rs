@@ -9,7 +9,7 @@ use windows_sys::Win32::UI::Input::{RAWINPUT, RAWINPUTHEADER, RAWKEYBOARD, RAWMO
 use windows_sys::Win32::UI::WindowsAndMessaging::DefWindowProcW;
 use windows_sys::Win32::UI::WindowsAndMessaging::{GetWindowLongPtrW, GWLP_USERDATA};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    WM_CLOSE, WM_DESTROY, WM_INPUT, WM_MOVE, WM_SIZE,
+    WM_CHAR, WM_CLOSE, WM_DESTROY, WM_INPUT, WM_MOUSEMOVE, WM_MOVE, WM_SIZE, WM_SYSCHAR,
 };
 
 use crate::app::App;
@@ -44,6 +44,11 @@ pub struct State<A> {
     /// When the application panics, the panic payload is stored in this field to be later
     /// resumed out of the wndproc callback.
     payload: Option<Box<dyn Any + Send + 'static>>,
+    /// When a `WM_CHAR` event is received with a high surrogate, it is stored here until the next
+    /// `WM_CHAR` event is received with a low surrogate.
+    ///
+    /// When the value is 0, it means that there is no high surrogate.
+    high_surrogate: u16,
     /// An opaque pointer to an [`App`] implementation.
     app: A,
 }
@@ -52,7 +57,11 @@ impl<A> State<A> {
     /// Creates a new [`State<A>`] instance.
     #[inline(always)]
     pub const fn new(app: A) -> Self {
-        Self { payload: None, app }
+        Self {
+            payload: None,
+            app,
+            high_surrogate: 0,
+        }
     }
 
     /// Returns an exclusive reference to the [`App`] implementation.
@@ -154,6 +163,51 @@ impl<A: App> State<A> {
                 unsafe { state.displatch_raw_input(&ctx, rawinput.assume_init_ref()) };
 
                 0
+            }
+            WM_MOUSEMOVE => {
+                let lparam = lparam as u32;
+                let x = lparam & 0xFFFF;
+                let y = lparam >> 16;
+                state.app.cursor(&ctx, x, y);
+                0
+            }
+            WM_CHAR | WM_SYSCHAR => {
+                let codepoint = wparam as u16;
+
+                if (0xD800..=0xDBFF).contains(&codepoint) {
+                    // When the code-point is a high surrogate, store it until a new `WM_CHAR` event
+                    // is received with a low surrogate.
+                    state.high_surrogate = codepoint;
+                    0
+                } else if (0xDC00..=0xDFFF).contains(&codepoint) {
+                    if state.high_surrogate == 0 {
+                        // There is not much we can do about it, so we'll just ignore it.
+                        return 0;
+                    }
+
+                    // If the code-point is a low surrogate, combine it with the high surrogate
+                    // and send it to the application.
+                    let h = state.high_surrogate;
+                    state.high_surrogate = 0;
+
+                    if let Some(Ok(c)) = std::char::decode_utf16([h, codepoint]).next() {
+                        let mut buf = [0; 4];
+                        let s = c.encode_utf8(&mut buf);
+                        state.app.text(&ctx, s);
+                    }
+
+                    0
+                } else {
+                    state.high_surrogate = 0;
+
+                    if let Some(c) = char::from_u32(codepoint as u32) {
+                        let mut buf = [0; 4];
+                        let s = c.encode_utf8(&mut buf);
+                        state.app.text(&ctx, s);
+                    }
+
+                    0
+                }
             }
             _ => unsafe { checked_default_window_proc(hwnd, msg, wparam, lparam) },
         };

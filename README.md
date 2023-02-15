@@ -16,6 +16,9 @@ import and choose from the following packages.
 
  * `sage-platform` is the main platform abstraction. It provides common event types, ways to
    represent the state of input devices, as well as ways to create a window for Sage applications.
+ * `sage-render` is a type-safe and opinionated wrapper around the Vulkan API. It tries to cut off
+   most of the boilerplate of Vulkan while remaining versatile enough for most real-time
+   applications.
 
 ## Contributing
 

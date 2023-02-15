@@ -112,6 +112,8 @@ pub struct Config<'a> {
     pub app_version: Version,
     /// A optional [`RawDisplayHandle`] with which the instance must be compatible.
     pub supports_display: Option<RawDisplayHandle>,
+    /// Whether validation layers should be enabled.
+    pub validation: bool,
 }
 
 /// Represents a live Vulkan instance.
@@ -126,7 +128,7 @@ pub struct Instance {
 
 impl Instance {
     /// Creates a new [`Instance`].
-    pub fn new(config: Config) -> Result<Self> {
+    pub fn new(config: &Config) -> Result<Self> {
         let mut app_name_container = Vec::new();
         let app_name = create_cstr(config.app_name.as_bytes(), &mut app_name_container);
 
@@ -152,7 +154,7 @@ impl Instance {
 
         // Enable validation layer when debug assertions are enabled, and that they are available.
         let mut enabled_layers = Vec::new();
-        if cfg!(debug_assertions) {
+        if config.validation {
             const VALIDATION_LAYER: &CStr =
                 unsafe { CStr::from_bytes_with_nul_unchecked(b"VK_LAYER_KHRONOS_validation\0") };
 

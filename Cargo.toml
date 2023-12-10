@@ -1,0 +1,12 @@
+[package]
+name = "sage"
+version = "0.0.1"
+edition = "2021"
+description = "An entity component system written in Rust."
+
+[features]
+nightly = []
+
+[dependencies]
+rustc-hash = "1"
+hashbrown = "0.14"

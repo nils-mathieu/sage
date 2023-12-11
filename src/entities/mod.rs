@@ -225,6 +225,7 @@ impl Entities {
             self.allocator.get_unchecked_mut(old_entity.index()).index = old_location.index;
 
             let new_index = new_table.table.len();
+            new_table.table.reserve_one();
             let new = new_table.table.get_unchecked(new_index);
 
             let output = edit.edit(old.forget(), new);

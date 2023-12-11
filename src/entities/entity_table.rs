@@ -136,6 +136,14 @@ impl EntityTable {
         self.len = self.len.wrapping_add(1);
     }
 
+    /// Ensures that at least one entity can be pushed within the capacity of this list.
+    #[inline(always)]
+    pub fn reserve_one(&mut self) {
+        if self.len == self.cap {
+            self.rallocate_for_push();
+        }
+    }
+
     /// Pushes a new entity within the capacity of this list.
     ///
     /// # Safety
@@ -147,10 +155,7 @@ impl EntityTable {
     where
         E: InitializeEntity,
     {
-        if self.len == self.cap {
-            self.rallocate_for_push();
-        }
-
+        self.reserve_one();
         self.push_within_capacity_unchecked(init);
     }
 

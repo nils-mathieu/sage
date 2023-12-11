@@ -4,7 +4,8 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 
 use super::{
-    Archetype, ComponentId, ComponentMeta, EditEntity, EntityLayout, EntityPtr, IntoEntityLayout,
+    Archetype, Component, ComponentId, ComponentMeta, EditEntity, EntityLayout, EntityPtr,
+    IntoEntityLayout,
 };
 
 /// A set of components.
@@ -27,6 +28,35 @@ impl<C> Default for StaticComponentSet<C> {
     #[inline(always)]
     fn default() -> Self {
         Self(PhantomData)
+    }
+}
+
+macro_rules! impl_for_tuple {
+    ($($ty:ident),*) => {
+        impl<$($ty: Component,)*> ComponentSet for StaticComponentSet<($($ty,)*)> {
+            #[inline(always)]
+            #[allow(unused_variables)]
+            fn contains(&self, id: ComponentId) -> bool {
+                $(
+                    id == ComponentId::of::<$ty>() ||
+                )* false
+            }
+        }
+    };
+}
+
+impl_for_tuple!();
+impl_for_tuple!(A);
+impl_for_tuple!(A, B);
+impl_for_tuple!(A, B, C);
+impl_for_tuple!(A, B, C, D);
+impl_for_tuple!(A, B, C, D, E);
+impl_for_tuple!(A, B, C, D, E, F);
+
+impl<T: Component> ComponentSet for StaticComponentSet<T> {
+    #[inline]
+    fn contains(&self, id: ComponentId) -> bool {
+        id == ComponentId::of::<T>()
     }
 }
 

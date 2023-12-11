@@ -74,6 +74,20 @@ impl<'e, T: Component> Query<'e> for &'e mut T {
     }
 }
 
+impl<'e, Q: Query<'e>> Query<'e> for Option<Q> {
+    type State = Option<<Q as Query<'e>>::State>;
+
+    #[inline(always)]
+    fn init(layout: &'e EntityLayout) -> Option<Self::State> {
+        Some(Q::init(layout))
+    }
+
+    #[inline(always)]
+    unsafe fn extract(state: &Self::State, id: Entity, entity: EntityPtr<'e>) -> Self {
+        state.as_ref().map(|state| Q::extract(state, id, entity))
+    }
+}
+
 macro_rules! impl_tuple {
     (has_duplicates $first:expr, $($ty:expr,)*) => {
         $( $first == $ty || )* impl_tuple!(has_duplicates $($ty,)*)

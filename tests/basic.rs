@@ -79,3 +79,45 @@ fn component_dropped() {
     world.entity_mut(e).despawn();
     assert_eq!(drop_counter.load(Relaxed), 1);
 }
+
+#[test]
+fn add_component() {
+    let mut world = World::new();
+
+    let mut e = world.spawn(1u32);
+    assert_eq!(e.get::<u32>(), Some(&1u32));
+    assert_eq!(e.get::<i32>(), None);
+    assert_eq!(e.component_count(), 1);
+    e.add(4i32);
+    assert_eq!(e.get::<u32>(), Some(&1u32));
+    assert_eq!(e.get::<i32>(), Some(&4i32));
+    assert_eq!(e.component_count(), 2);
+}
+
+#[test]
+fn add_replace() {
+    let mut world = World::new();
+
+    let mut e = world.spawn((1u32, 2i32));
+    assert_eq!(e.get::<u32>(), Some(&1u32));
+    assert_eq!(e.get::<i32>(), Some(&2i32));
+    assert_eq!(e.component_count(), 2);
+    e.add(4u32);
+    assert_eq!(e.get::<i32>(), Some(&2i32));
+    assert_eq!(e.get::<u32>(), Some(&4u32));
+    assert_eq!(e.component_count(), 2);
+}
+
+#[test]
+fn remove_component() {
+    let mut world = World::new();
+
+    let mut e = world.spawn((1u32, 4i32));
+    assert_eq!(e.get::<u32>(), Some(&1u32));
+    assert_eq!(e.get::<i32>(), Some(&4i32));
+    assert_eq!(e.component_count(), 2);
+    e.remove::<u32>();
+    assert_eq!(e.get::<u32>(), None);
+    assert_eq!(e.get::<i32>(), Some(&4i32));
+    assert_eq!(e.component_count(), 1);
+}

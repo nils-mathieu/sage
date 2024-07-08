@@ -1,0 +1,8 @@
+# IDEs
+/.vscode
+/.zed
+
+# Cargo
+/.cargo
+/target
+/Cargo.lock

@@ -1,0 +1,13 @@
+[workspace]
+members = ["lib/sage-ecs"]
+resolver = "2"
+
+[workspace.package]
+license-file = "LICENSE.md"
+authors = ["Nils Mathieu <nils@astralforge.art>"]
+homepage = "https://sage-engine.org/"
+repository = "https://github.com/nils-mathieu/sage/"
+
+[workspace.lints.rust]
+unsafe-op-in-unsafe-fn = "deny"
+missing-docs = "warn"

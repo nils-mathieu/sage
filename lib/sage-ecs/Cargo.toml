@@ -9,13 +9,15 @@ license-file.workspace = true
 homepage.workspace = true
 repository.workspace = true
 
-[lint]
+[lints]
 workspace = true
 
 [features]
-default = ["inline-more"]
+default = ["inline-more", "rust-components"]
 
 inline-more = ["hashbrown/inline-more"]
+rust-components = []
 
 [dependencies]
 hashbrown = { version = "0.14", default-features = false }
+fixedbitset = { version = "0.5", default-features = false }

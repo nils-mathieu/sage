@@ -21,7 +21,7 @@
 //!
 //! Instead, it focuses on fast and efficient storage of entities and their components.
 
-#![no_std]
+// #![no_std]
 
 extern crate alloc;
 
@@ -29,5 +29,6 @@ pub mod component;
 pub mod entity;
 pub mod sparse_set;
 pub mod tables;
+pub mod world;
 
 mod utility;

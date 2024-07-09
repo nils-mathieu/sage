@@ -3,6 +3,8 @@
 use alloc::vec::Vec;
 
 mod column;
+use crate::component::Registry;
+
 pub use self::column::*;
 
 mod table;
@@ -52,30 +54,36 @@ impl<E> Tables<E> {
         }
     }
 
+    /// Reserves memory for additional entities in the provided table.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if the memory cannot be allocated.
+    ///
+    /// # Safety
+    ///
+    /// The provided `table` ID must be valid. Id 0 is always valid and refers to the
+    /// table with no components.
+    pub unsafe fn reserve(&mut self, table: TableId, additional: usize) {
+        debug_assert!(table < self.tables.len());
+        let table = unsafe { self.tables.get_unchecked_mut(table) };
+        table.reserve(additional);
+    }
+
     /// Spawns an empty entity.
     pub fn spawn_empty(&mut self, metadata: E) -> EntityLocation {
-        // The ID 0 is reserved for the table with no components.
-        let table_id = 0;
-
-        let table = unsafe { self.tables.get_unchecked_mut(table_id) };
-        table.reserve(1);
-
-        let table_row = table.len();
-
         unsafe {
-            table
-                .metadata_spare_capacity()
-                .get_unchecked_mut(0)
-                .write(metadata);
+            // The ID 0 is reserved for the table with no components.
+            let table_id = 0;
 
-            // SAFETY: We properly initialized a single entity. There was no components to
-            // initialize because the entity is empty.
-            table.assume_init_push(1);
-        }
+            let table = self.tables.get_unchecked_mut(table_id);
+            let table_row = table.len();
+            table.push(metadata, ());
 
-        EntityLocation {
-            table_id,
-            table_row,
+            EntityLocation {
+                table_id,
+                table_row,
+            }
         }
     }
 }

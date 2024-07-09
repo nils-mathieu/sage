@@ -16,6 +16,12 @@ pub struct Entity {
 }
 
 impl Entity {
+    /// Creates a new [`Entity`] identifier with the provided index and generation numbers.
+    #[cfg_attr(feature = "inline-more", inline)]
+    pub(super) const fn new(index: u32, generation: NonZero<u32>) -> Self {
+        Self { index, generation }
+    }
+
     /// Returns the bit-representation of the [`Entity`] identifier.
     ///
     /// This is mainly used for hashing and serialization purposes.
@@ -81,12 +87,6 @@ impl Entity {
     #[cfg_attr(feature = "inline-more", inline)]
     pub fn generation(&self) -> u32 {
         self.generation.get()
-    }
-
-    /// Creates a new [`Entity`] identifier with the provided index and generation numbers.
-    #[cfg_attr(feature = "inline-more", inline)]
-    pub(super) const fn new(index: u32, generation: NonZero<u32>) -> Self {
-        Self { index, generation }
     }
 }
 

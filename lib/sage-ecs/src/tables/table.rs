@@ -1,7 +1,11 @@
 use alloc::vec::Vec;
 use core::mem::MaybeUninit;
 
-use crate::{sparse_set::SparseSet, tables::column::Column};
+use crate::{
+    component::{ComponentId, InsertBundle},
+    sparse_set::SparseSet,
+    tables::column::Column,
+};
 
 /// Stores a collection with a specific set of components.
 pub struct Table<E> {
@@ -74,6 +78,26 @@ impl<E> Table<E> {
                 .dense_mut()
                 .iter_mut()
                 .for_each(|c| c.assume_init_push(additional));
+        }
+    }
+
+    /// Pushes a single new value to the table.
+    ///
+    /// # Safety
+    ///
+    /// The function assumes that the provided [`InsertBundle`] will properly initialize the
+    /// components in the table.
+    pub unsafe fn push(&mut self, metadata: E, insert: impl InsertBundle) {
+        unsafe {
+            self.reserve(1);
+            self.metadata_spare_capacity()
+                .get_unchecked_mut(0)
+                .write(metadata);
+            insert.insert(|id| match self.columns.get_mut(id) {
+                Some(column) => column.get_unchecked_mut(column.len()),
+                None => core::ptr::null_mut(),
+            });
+            self.assume_init_push(1);
         }
     }
 }

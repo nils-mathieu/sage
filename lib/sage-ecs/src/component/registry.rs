@@ -1,17 +1,10 @@
-//! Atomic fragment of an entity.
-//!
-//! # Rust types
-//!
-//! In [`sage-ecs`](crate), components are not necessarily Rust types. Instead, they are just a
-//! collection of bytes with an associated drop function. This allows components to come from any
-//! language or runtime.
-
 use alloc::{boxed::Box, vec::Vec};
 use core::alloc::Layout;
 #[cfg(feature = "rust-components")]
 use core::any::TypeId;
-use fixedbitset::FixedBitSet;
 
+#[cfg(feature = "rust-components")]
+use super::{Bundle, Component};
 #[cfg(feature = "rust-components")]
 use crate::utility::{NoopBuildHasher, NoopHashMap};
 
@@ -67,7 +60,7 @@ pub struct BundleInfo {
     /// The name of the component bundle. This is mainly used for debugging purposes.
     pub name: Box<str>,
     /// The components that make up this bundle.
-    pub components: FixedBitSet,
+    pub components: Box<[ComponentId]>,
 }
 
 /// Represents the ID of a bundle type.
@@ -108,7 +101,7 @@ impl Registry {
     /// If the component has already been previously registered, this function will return
     /// the existing component ID.
     #[cfg(feature = "rust-components")]
-    pub fn register_rust_component<T: 'static>(&mut self) -> ComponentId {
+    pub fn register_rust_component<T: Component>(&mut self) -> ComponentId {
         *self
             .rust_components
             .entry(TypeId::of::<T>())
@@ -141,6 +134,28 @@ impl Registry {
     #[cfg_attr(feature = "inline-more", inline)]
     pub fn components(&self) -> &[ComponentInfo] {
         &self.components
+    }
+
+    /// Registers a static Rust bundle.
+    ///
+    /// If the bundle has already been registered, this function will return the existing bundle
+    /// ID.
+    #[cfg(feature = "rust-components")]
+    pub fn register_rust_bundle<B: Bundle>(&mut self) -> BundleId {
+        // FIXME: We can probably avoid.
+
+        let type_id = TypeId::of::<B>();
+        if self.rust_bundles.contains_key(&type_id) {
+            unsafe { *self.rust_bundles.get(&type_id).unwrap_unchecked() }
+        } else {
+            let components = B::register_components(self);
+            let id = self.register_bundle(BundleInfo {
+                name: core::any::type_name::<B>().into(),
+                components,
+            });
+            self.rust_bundles.insert_unique_unchecked(type_id, id);
+            id
+        }
     }
 
     /// Registers a new component bundle.

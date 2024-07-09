@@ -1,7 +1,10 @@
 use alloc::alloc::handle_alloc_error;
 use core::{alloc::Layout, ptr::NonNull};
 
-use crate::{component::DropFn, utility::assert_unchecked};
+use crate::{
+    component::{ComponentId, DropFn},
+    utility::assert_unchecked,
+};
 
 /// A type erased version `Vec<T>` that is used to store a single type of components within a
 /// `ColumnStorage`.

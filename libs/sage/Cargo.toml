@@ -1,0 +1,14 @@
+[package]
+name = "sage"
+edition = "2024"
+version = "0.0.1"
+description = "Sage: A Game Engine"
+authors = ["Nils Mathieu <nils@astralforge.art>"]
+license = "MIT"
+repository = "https://github.com/TheAstralForge/sage"
+keywords = ["game", "engine", "sage", "graphics"]
+categories = []
+
+[dependencies]
+sage-core.workspace = true
+sage-winit.workspace = true

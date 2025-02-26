@@ -1,0 +1,17 @@
+[package]
+name = "sage-winit"
+edition = "2024"
+version = "0.0.1"
+description = "A winit-based windowing backend for the Sage game engine"
+authors = ["Nils Mathieu <nils@astralforge.art>"]
+license = "MIT"
+repository = "https://github.com/TheAstralForge/sage"
+keywords = ["game", "engine", "sage", "windowing"]
+categories = []
+
+[dependencies]
+sage-core.workspace = true
+
+winit = "0.30"
+hashbrown.workspace = true
+foldhash.workspace = true

@@ -1,6 +1,12 @@
-use crate::{
-    OpaquePtr, Uuid,
-    entities::{Component, Entities, EntityId, EntityIndex, EntityLocation},
+use {
+    super::{
+        ComponentList,
+        modify_entity::{self, ModifyEntity},
+    },
+    crate::{
+        OpaquePtr, Uuid,
+        entities::{Component, Entities, EntityId, EntityIndex, EntityLocation},
+    },
 };
 
 /// A reference to an entity in an [`Entities`] collection.
@@ -84,7 +90,7 @@ impl<'a> EntityMut<'a> {
                 .archetype_storages()
                 .get_unchecked(location.archetype)
                 .get_column(uuid)
-                .map(|column| column.get_unchecked(location.index))
+                .map(|column| column.get_unchecked(location.row))
         }
     }
 
@@ -124,14 +130,36 @@ impl<'a> EntityMut<'a> {
             .unwrap_or_else(|| missing_component(C::DEBUG_NAME))
     }
 
+    // ========================================================================================== //
+    // ENTITY MODIFICATION                                                                        //
+    // ========================================================================================== //
+
     /// Despawns the entity, removing it from the collection.
     #[inline]
     pub fn despawn(self) {
         unsafe { self.entities.despawn_unchecked(self.index) };
     }
+
+    /// Modifies this entity's components.
+    pub fn modify<M>(&mut self, modify: M) -> M::Output
+    where
+        M: ModifyEntity,
+    {
+        unsafe { self.entities.modify_unchecked(self.index, modify) }
+    }
+
+    /// Inserts the provided components into the entity.
+    ///
+    /// # Remarks
+    ///
+    /// This function will *replace* any existing components.
+    pub fn insert<C: ComponentList>(&mut self, components: C) {
+        self.modify(modify_entity::Insert(components))
+    }
 }
 
 /// A shared reference to an existing entity in an [`Entities`] collection.
+#[derive(Clone, Copy)]
 pub struct EntityRef<'a> {
     /// The [`Entities`] collection that the entity is stored in.
     entities: &'a Entities,
@@ -157,19 +185,19 @@ impl<'a> EntityRef<'a> {
 
     /// Returns the location of the entity within its collection.
     #[inline]
-    pub fn location(&self) -> EntityLocation {
+    pub fn location(self) -> EntityLocation {
         unsafe { *self.entities.id_allocator().get_unchecked(self.index) }
     }
 
     /// Returns the raw [`EntityIndex`] of the entity.
     #[inline]
-    pub fn index(&self) -> EntityIndex {
+    pub fn index(self) -> EntityIndex {
         self.index
     }
 
     /// Returns the ID of the entity.
     #[inline]
-    pub fn id(&self) -> EntityId {
+    pub fn id(self) -> EntityId {
         unsafe {
             self.entities
                 .id_allocator()
@@ -182,7 +210,7 @@ impl<'a> EntityRef<'a> {
     // ========================================================================================== //
 
     /// Returns whether the entity has a component with the specified UUID.
-    pub fn has_component_raw(&self, uuid: Uuid) -> bool {
+    pub fn has_component_raw(self, uuid: Uuid) -> bool {
         let location = self.location();
         unsafe {
             self.entities
@@ -194,7 +222,7 @@ impl<'a> EntityRef<'a> {
 
     /// Returns whether the entity has a component of the specified type.
     #[inline]
-    pub fn has_component<C: Component>(&self) -> bool {
+    pub fn has_component<C: Component>(self) -> bool {
         self.has_component_raw(C::UUID)
     }
 
@@ -206,21 +234,21 @@ impl<'a> EntityRef<'a> {
     ///
     /// On failure, when the component is not part of the entity's archetype, this function returns
     /// `None`.
-    pub fn get_raw(&self, uuid: Uuid) -> Option<OpaquePtr> {
+    pub fn get_raw(self, uuid: Uuid) -> Option<OpaquePtr> {
         let location = self.location();
         unsafe {
             self.entities
                 .archetype_storages()
                 .get_unchecked(location.archetype)
                 .get_column(uuid)
-                .map(|column| column.get_unchecked(location.index))
+                .map(|column| column.get_unchecked(location.row))
         }
     }
 
     /// Gets a shared reference to one of the entity's components based on its UUID.
     ///
     /// If the component is not part of the entity's archetype, this function returns `None`.
-    pub fn try_get<C: Component>(&self) -> Option<&C> {
+    pub fn try_get<C: Component>(self) -> Option<&'a C> {
         unsafe { self.get_raw(C::UUID).map(|x| x.as_ref()) }
     }
 
@@ -230,7 +258,7 @@ impl<'a> EntityRef<'a> {
     ///
     /// This function panics if the component is not part of the entity's archetype.
     #[track_caller]
-    pub fn get<C: Component>(&self) -> &C {
+    pub fn get<C: Component>(self) -> &'a C {
         self.try_get::<C>()
             .unwrap_or_else(|| missing_component(C::DEBUG_NAME))
     }

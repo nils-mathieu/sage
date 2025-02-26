@@ -6,6 +6,9 @@ use crate::Uuid;
 pub struct ArchetypeComponents([Uuid]);
 
 impl ArchetypeComponents {
+    /// The empty [`ArchetypeComponents`] instance.
+    pub const EMPTY: &Self = unsafe { Self::from_slice_unchecked(&[]) };
+
     /// Creates a new [`ArchetypeComponents`] from a slice of [`Uuid`]s.
     ///
     /// # Safety
@@ -22,8 +25,24 @@ impl ArchetypeComponents {
     ///
     /// The caller must ensure that the returned slice is sorted and contains no duplicates.
     #[inline(always)]
-    pub unsafe fn from_slice_unchecked(slice: &[Uuid]) -> &Self {
+    pub const unsafe fn from_slice_unchecked(slice: &[Uuid]) -> &Self {
         unsafe { &*(slice as *const [Uuid] as *const Self) }
+    }
+
+    /// Given the provied slice of [`Uuid`]s, returns a new [`ArchetypeComponents`] instance.
+    ///
+    /// This function will take care of sorting and deduplicating the slice.
+    pub fn from_unsorted_slice(set: &mut [Uuid]) -> &ArchetypeComponents {
+        set.sort_unstable();
+        let (dedupped, _) = set.partition_dedup();
+        unsafe { Self::from_slice_unchecked(dedupped) }
+    }
+
+    /// Given the provided vector of [`Uuid`]s, returns a new [`ArchetypeComponents`] instance.
+    pub fn from_unsorted_vec(mut set: Vec<Uuid>) -> Box<ArchetypeComponents> {
+        set.sort_unstable();
+        set.dedup();
+        unsafe { Self::from_boxed_slice_unchecked(set.into_boxed_slice()) }
     }
 
     /// Returns the list of [`Uuid`]s stored in this [`ArchetypeComponents`] instance.
@@ -45,6 +64,13 @@ impl From<&'_ ArchetypeComponents> for Box<ArchetypeComponents> {
     #[inline(always)]
     fn from(value: &ArchetypeComponents) -> Self {
         value.to_owned()
+    }
+}
+
+impl AsRef<ArchetypeComponents> for ArchetypeComponents {
+    #[inline(always)]
+    fn as_ref(&self) -> &ArchetypeComponents {
+        self
     }
 }
 

@@ -1,5 +1,6 @@
 use crate::{
     app::{App, Global, missing_global},
+    entities::EntityIdAllocator,
     system::SystemAccess,
 };
 
@@ -23,16 +24,29 @@ pub unsafe trait SystemParam {
     /// The output item of the parameter.
     type Item<'w>;
 
-    /// Registers the resources that the parameter requires to construct itself.
+    /// Initializes the system param's state and registers its required access to the application's
+    /// resources.
     ///
     /// # Panics
     ///
     /// This function panics if any of the resources required by this system are already accessed
     /// according to the provided [`SystemAccess`].
-    fn register_access(access: &mut SystemAccess);
+    ///
+    /// # Returns
+    ///
+    /// This function returns the system param's persistent state.
+    fn initialize(app: &mut App, access: &mut SystemAccess) -> Self::State;
 
-    /// Initializes the parameter's state.
-    fn create_state(app: &mut App) -> Self::State;
+    /// Applies any deferred changes to the application
+    ///
+    /// # Safety
+    ///
+    /// 1. The provided `state` must have been previously initialized with [`initialize`].
+    ///
+    /// 2. The provided [`App`] must be the one associated with this system parameter.
+    ///
+    /// [`initialize`]: SystemParam::initialize
+    unsafe fn apply_deferred(state: &mut Self::State, app: &mut App);
 
     /// Fetches the parameter's state from the application.
     ///
@@ -42,21 +56,61 @@ pub unsafe trait SystemParam {
     ///
     /// 1. The provided [`App`] is safe to use with the [`SystemParam`]'s accessed resources.
     ///
-    /// 2. The provided state has been previously initialized with [`create_state`].
+    /// 2. The provided state has been previously initialized with [`initialize`].
     ///
-    /// [`create_state`]: SystemParam::create_state
-    unsafe fn fetch<'w>(state: &'w Self::State, app: &'w App) -> Self::Item<'w>;
+    /// [`initialize`]: SystemParam::initialize
+    unsafe fn fetch<'w>(state: &'w mut Self::State, app: &'w App) -> Self::Item<'w>;
 }
 
-unsafe impl SystemParam for () {
+macro_rules! tuple_impl {
+    ($($name:ident)*) => {
+        #[allow(unused_variables, clippy::unused_unit, unused_unsafe, non_snake_case)]
+        unsafe impl<$($name,)*> SystemParam for ($($name,)*)
+        where
+            $($name: SystemParam,)*
+        {
+            type State = ($($name::State,)*);
+            type Item<'w> = ($($name::Item<'w>,)*);
+
+            fn initialize(app: &mut App, access: &mut SystemAccess) -> Self::State {
+                ($($name::initialize(app, access),)*)
+            }
+
+            unsafe fn fetch<'w>(state: &'w mut Self::State, app: &'w App) -> Self::Item<'w> {
+                let ($($name,)*) = state;
+                unsafe { ($($name::fetch($name, app),)*) }
+            }
+
+            unsafe fn apply_deferred(state: &mut Self::State, app: &mut App) {
+                let ($($name,)*) = state;
+                unsafe { $($name::apply_deferred($name, app);)* }
+            }
+        }
+    }
+}
+
+tuple_impl!();
+tuple_impl!(A);
+tuple_impl!(A B);
+tuple_impl!(A B C);
+tuple_impl!(A B C D);
+tuple_impl!(A B C D E);
+tuple_impl!(A B C D E F);
+tuple_impl!(A B C D E F G);
+tuple_impl!(A B C D E F G H);
+
+unsafe impl SystemParam for &'_ EntityIdAllocator {
     type State = ();
-    type Item<'w> = ();
+    type Item<'w> = &'w EntityIdAllocator;
 
-    fn register_access(_access: &mut SystemAccess) {}
+    fn initialize(_app: &mut App, _access: &mut SystemAccess) -> Self::State {}
 
-    fn create_state(_state: &mut App) -> Self::State {}
+    unsafe fn apply_deferred(_state: &mut Self::State, _app: &mut App) {}
 
-    unsafe fn fetch<'w>(_state: &'w Self::State, _app: &'w App) -> Self::Item<'w> {}
+    #[inline]
+    unsafe fn fetch<'w>(_state: &'w mut Self::State, app: &'w App) -> Self::Item<'w> {
+        app.entities().id_allocator()
+    }
 }
 
 /// A global resource.
@@ -69,12 +123,12 @@ unsafe impl<G: Global> SystemParam for Glob<&'_ G> {
     type State = ();
     type Item<'w> = &'w G;
 
-    fn register_access(_access: &mut SystemAccess) {}
+    fn initialize(_app: &mut App, _access: &mut SystemAccess) -> Self::State {}
 
-    fn create_state(_state: &mut App) -> Self::State {}
+    unsafe fn apply_deferred(_state: &mut Self::State, _app: &mut App) {}
 
     #[inline]
-    unsafe fn fetch<'w>(_state: &'w Self::State, app: &'w App) -> Self::Item<'w> {
+    unsafe fn fetch<'w>(_state: &'w mut Self::State, app: &'w App) -> Self::Item<'w> {
         app.global()
     }
 }
@@ -83,12 +137,12 @@ unsafe impl<G: Global> SystemParam for Glob<&'_ mut G> {
     type State = ();
     type Item<'w> = &'w mut G;
 
-    fn register_access(_access: &mut SystemAccess) {}
+    fn initialize(_app: &mut App, _access: &mut SystemAccess) -> Self::State {}
 
-    fn create_state(_state: &mut App) -> Self::State {}
+    unsafe fn apply_deferred(_state: &mut Self::State, _app: &mut App) {}
 
     #[inline]
-    unsafe fn fetch<'w>(_state: &'w Self::State, app: &'w App) -> Self::Item<'w> {
+    unsafe fn fetch<'w>(_state: &'w mut Self::State, app: &'w App) -> Self::Item<'w> {
         let p = app
             .globals()
             .get_raw(G::UUID)

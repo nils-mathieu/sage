@@ -2,15 +2,21 @@
 
 use sage_core::{Uuid, app::App};
 
+pub use winit::{
+    dpi,
+    window::{Window as WinitWindow, WindowAttributes},
+};
+
 mod app_runner;
 pub use self::app_runner::*;
 
 mod window;
 pub use self::window::*;
 
-pub mod events;
+mod event_loop;
+pub use self::event_loop::*;
 
-pub type WinitWindow = winit::window::Window;
+pub mod events;
 
 /// Runs the application to completion.
 ///

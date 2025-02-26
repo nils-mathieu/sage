@@ -45,6 +45,9 @@ impl<I> Schedule<I> {
         for system in &mut self.systems {
             unsafe { system.run(input.clone(), app) };
         }
+        for system in &mut self.systems {
+            unsafe { system.apply_deferred(app) };
+        }
     }
 }
 

@@ -269,13 +269,18 @@ where
         type Out = ();
 
         #[inline(always)]
-        fn register_access(&mut self, access: &mut SystemAccess) {
-            self.0.register_access(access)
+        fn access(&self) -> &SystemAccess {
+            self.0.access()
         }
 
         #[inline(always)]
         unsafe fn run(&mut self, input: RawEventContext, app: &App) {
             unsafe { self.0.run(EventContext::from_raw(input), app) }
+        }
+
+        #[inline(always)]
+        unsafe fn apply_deferred(&mut self, app: &mut App) {
+            unsafe { self.0.apply_deferred(app) };
         }
     }
 

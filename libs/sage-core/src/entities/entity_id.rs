@@ -1,4 +1,10 @@
-use std::num::NonZeroU32;
+use {
+    super::EntityLocation,
+    std::{
+        num::NonZeroU32,
+        sync::atomic::{AtomicIsize, Ordering::Relaxed},
+    },
+};
 
 /// The raw entity index part of an [`EntityId`].
 pub type EntityIndex = u32;
@@ -105,18 +111,130 @@ impl<M> Slot<M> {
 }
 
 /// A potentially concurrent collection responsible for creating new [`EntityId`]s.
-pub struct EntityIdAllocator<M> {
+pub struct EntityIdAllocator<M = EntityLocation> {
     /// The slots that store metadata about entities.
     slots: Vec<Slot<M>>,
     /// The free list of slots that have been deallocated so far.
     ///
     /// When new entities are created, they are allocated from this list in priority.
     free_list: Vec<u32>,
+    /// A cursor that's used to count the number of entities that have been reserved
+    /// concurrently by the allocator.
+    ///
+    /// When positive, this is the number in `free_list` of indices that have not yet been
+    /// reserved. This means that when `reserved == free_list.len()`, then the allocator has
+    /// reserved no entities.
+    ///
+    /// Negative values mean that the allocator has reserved indices that are outside of the free
+    /// list. Negative values mean that we use indices larger than `slot.len()` to allocate new
+    /// entities.
+    ///
+    /// When new entity indices are reserved, the `reserved` cursor is decremented.
+    reserved: AtomicIsize,
 }
 
 impl<M> EntityIdAllocator<M> {
+    /// Returns the number of entities that were reserved but not yet allocated properly.
+    pub fn reserved_entities(&mut self) -> usize {
+        let r = *self.reserved.get_mut();
+        if r < 0 {
+            r.unsigned_abs() + self.free_list.len()
+        } else {
+            self.free_list.len() - r as usize
+        }
+    }
+
+    /// Flushes the allocator's reserved entities, properly giving them the metadata they
+    /// should have.
+    ///
+    /// # Safety
+    ///
+    /// `get_metadata` must not panic.
+    pub unsafe fn flush(&mut self, mut get_metadata: impl FnMut(EntityId) -> M) {
+        let reserved = *self.reserved.get_mut();
+
+        // Reserve more slots if necessary to make sure we do not panic later.
+        if reserved < 0 {
+            self.slots.reserve(reserved.unsigned_abs());
+        }
+
+        let free_list_start = reserved.max(0) as usize;
+        for index in self.free_list.drain(free_list_start..) {
+            let slot = unsafe { self.slots.get_unchecked_mut(index as usize) };
+            slot.metadata = get_metadata(EntityId {
+                index,
+                generation: slot.generation,
+            });
+        }
+
+        if reserved < 0 {
+            let min = self.slots.len();
+            let max = unsafe { min.unchecked_add(reserved.unsigned_abs()) };
+
+            let max = max.try_into().unwrap_or_else(|_| too_many_entities());
+            let min = min as u32; // Cannot fail if max could be converted.
+
+            for index in min..max {
+                self.slots.push(Slot {
+                    generation: NonZeroU32::MIN,
+                    metadata: get_metadata(EntityId {
+                        index,
+                        generation: NonZeroU32::MIN,
+                    }),
+                });
+            }
+        }
+
+        *self.reserved.get_mut() = self.free_list.len() as isize;
+    }
+
+    /// Returns whether the allocator needs to be flushed.
+    #[inline]
+    pub fn needs_flush(&mut self) -> bool {
+        *self.reserved.get_mut() as usize == self.free_list.len()
+    }
+
+    /// Reserves a single entity ID.
+    pub fn reserve_one(&self) -> EntityId {
+        let reserved = self
+            .reserved
+            .fetch_sub(1, Relaxed)
+            .checked_sub(1)
+            .unwrap_or_else(|| too_many_entities());
+
+        if reserved >= 0 {
+            unsafe {
+                let index = *self.free_list.get_unchecked(reserved as usize);
+                self.get_id_for_index_unchecked(index)
+            }
+        } else {
+            // SAFETY: reserved <= -1
+            //      => reserved.unsigned_abs() >= 1
+            let added = unsafe { reserved.unsigned_abs().unchecked_sub(1) };
+
+            let index = self
+                .slots
+                .len()
+                .checked_add(added)
+                .unwrap_or_else(|| too_many_entities())
+                .try_into()
+                .unwrap_or_else(|_| too_many_entities());
+
+            EntityId {
+                index,
+                generation: NonZeroU32::MIN,
+            }
+        }
+    }
+
     /// Allocates a new entity with the provided metadata.
-    pub fn allocate(&mut self, metadata: M) -> EntityId {
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the allocator is flushed.
+    pub unsafe fn allocate(&mut self, metadata: M) -> EntityId {
+        debug_assert!(!self.needs_flush());
+
         if let Some(index) = self.free_list.pop() {
             let slot = unsafe { self.slots.get_unchecked(index as usize) };
             let generation = slot.generation;
@@ -149,28 +267,15 @@ impl<M> EntityIdAllocator<M> {
     /// # Safety
     ///
     /// The caller must ensure that the entity at `entity` is valid and live.
+    ///
+    /// The caller must ensure that the allocator is flushed.
     pub unsafe fn deallocate_unchecked(&mut self, entity: EntityIndex) -> &mut M {
+        debug_assert!(!self.needs_flush());
+
         let slot = unsafe { self.slots.get_unchecked_mut(entity as usize) };
         slot.bump_generation();
         self.free_list.push(entity);
         &mut slot.metadata
-    }
-
-    /// Attempts to deallocate the entity with the provided identifier.
-    ///
-    /// # Returns
-    ///
-    /// If the entity exists, then this function returns the metadata associated with the entity.
-    ///
-    /// Otherwise, this function returns `None`.
-    pub fn deallocate(&mut self, entity: EntityId) -> Option<&mut M> {
-        let slot = self
-            .slots
-            .get_mut(entity.index as usize)
-            .filter(|slot| slot.generation == entity.generation)?;
-        slot.bump_generation();
-        self.free_list.push(entity.index);
-        Some(&mut slot.metadata)
     }
 
     /// Returns the [`EntityId`] associated with the provided index without checking whether
@@ -240,6 +345,7 @@ impl<M> Default for EntityIdAllocator<M> {
         Self {
             slots: Vec::new(),
             free_list: Vec::new(),
+            reserved: AtomicIsize::new(0),
         }
     }
 }

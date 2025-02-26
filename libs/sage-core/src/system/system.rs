@@ -9,6 +9,7 @@ pub struct RawSystemVTable {
     debug_name: &'static str,
     drop_fn: unsafe extern "C" fn(data: OpaquePtr),
     run_fn: unsafe extern "C" fn(data: OpaquePtr, i: OpaquePtr, o: OpaquePtr, app: &App),
+    apply_deferred_fn: unsafe extern "C" fn(data: OpaquePtr, app: &mut App),
 }
 
 /// An FFI-safe type that contains the state of a system.
@@ -48,6 +49,13 @@ impl<I, O> RawSystem<I, O> {
             }
         }
 
+        unsafe extern "C" fn apply_deferred_fn<S>(data: OpaquePtr, app: &mut App)
+        where
+            S: System,
+        {
+            unsafe { data.as_mut::<S>().apply_deferred(app) };
+        }
+
         trait ProvideVTable {
             const VTABLE: RawSystemVTable;
         }
@@ -57,6 +65,7 @@ impl<I, O> RawSystem<I, O> {
                 debug_name: S::DEBUG_NAME,
                 drop_fn: drop_fn::<S>,
                 run_fn: run_fn::<S>,
+                apply_deferred_fn: apply_deferred_fn::<S>,
             };
         }
 
@@ -85,6 +94,18 @@ impl<I, O> RawSystem<I, O> {
             output.assume_init()
         }
     }
+
+    /// Runs the `apply_deferred` method of the system.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the provided [`App`] is the one associated with this
+    /// system.
+    pub unsafe fn apply_deferred(&mut self, app: &mut App) {
+        unsafe {
+            (self.vtable.apply_deferred_fn)(self.data, app);
+        }
+    }
 }
 
 /// Contains the resources that a [`System`] may access during its execution.
@@ -97,10 +118,10 @@ pub struct SystemAccess {}
 ///
 /// Implementators must ensure that:
 ///
-/// 1. The [`register_access`] method must reflect correctly the resources that will be accessed in
+/// 1. The [`access`] method must reflect correctly the resources that will be accessed in
 ///    the [`run`] method.
 ///
-/// [`register_access`]: System::register_access
+/// [`access`]: System::access
 /// [`run`]: System::run
 pub unsafe trait System: 'static + Send + Sync {
     /// A debug name for the system.
@@ -116,13 +137,8 @@ pub unsafe trait System: 'static + Send + Sync {
     /// This may be arbitrary data which will be returned when the system is executed.
     type Out;
 
-    /// Registers the resources that the system accesses.
-    ///
-    /// # Panics
-    ///
-    /// This function panics if any of the required accesses are marked as being already
-    /// accessed by the provided [`SystemAccess`].
-    fn register_access(&mut self, access: &mut SystemAccess);
+    /// Returns the resources that the system wishes to access.
+    fn access(&self) -> &SystemAccess;
 
     /// Runs the system to completion.
     ///
@@ -133,6 +149,13 @@ pub unsafe trait System: 'static + Send + Sync {
     ///
     /// The system must be associated with the given [`App`] instance.
     unsafe fn run(&mut self, input: Self::In<'_>, app: &App) -> Self::Out;
+
+    /// Applies any deferred changes to the application.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the provided [`App`] is the one associated with this system.
+    unsafe fn apply_deferred(&mut self, app: &mut App);
 }
 
 /// A trait for Rust types that can be turned into a [`System`] implementation.
@@ -141,5 +164,9 @@ pub trait IntoSystem<M> {
     type System: System;
 
     /// Converts this type into its associated [`System`] implementation.
+    ///
+    /// # Notes
+    ///
+    /// The returned system is associated with the provided [`App`].
     fn into_system(self, app: &mut App) -> Self::System;
 }

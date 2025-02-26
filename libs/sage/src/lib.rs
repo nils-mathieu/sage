@@ -5,7 +5,12 @@
 pub use {
     sage_core::{
         TypeUuid, Uuid,
-        app::{App, FromApp},
+        app::{App, Commands, FromApp},
+        entities::EntityId,
     },
-    sage_winit::{STARTUP_SCHEDULE, UPDATE_SCHEDULE, run},
+    sage_winit::{
+        EventLoopCommands, STARTUP_SCHEDULE, UPDATE_SCHEDULE, WindowAttributes,
+        dpi::{LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize, Position, Size},
+        run,
+    },
 };

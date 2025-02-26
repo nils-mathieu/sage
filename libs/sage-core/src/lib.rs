@@ -4,6 +4,8 @@
 
 #![feature(const_type_name)]
 #![feature(nonnull_provenance)]
+#![feature(exclusive_wrapper)]
+#![feature(slice_partition_dedup)]
 
 pub mod app;
 

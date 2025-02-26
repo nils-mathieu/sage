@@ -1,12 +1,27 @@
 use {
-    crate::app::App,
-    std::{alloc::Layout, mem::ManuallyDrop, ptr::NonNull},
+    super::Event,
+    crate::{
+        app::App,
+        entities::{ComponentList, EntityId, EntityIdAllocator},
+        system::{SystemAccess, SystemParam},
+    },
+    std::{alloc::Layout, mem::ManuallyDrop, ptr::NonNull, sync::Exclusive},
 };
 
 /// A command that can be executed on an [`App`] once exclusive access is available.
 pub trait Command: 'static + Send + Sized {
     /// Executes the command on the provided [`App`].
     fn execute(self, app: &mut App);
+}
+
+impl<F> Command for F
+where
+    F: FnOnce(&mut App) + Send + 'static,
+{
+    #[inline(always)]
+    fn execute(self, app: &mut App) {
+        self(app);
+    }
 }
 
 /// The Vtable of [`RawCommand`].
@@ -23,6 +38,9 @@ struct RawCommandVTable<T: ?Sized> {
     /// `T` might not be aligned if it requires an alignment greater than the machine word.
     drop_fn: unsafe extern "C" fn(*mut T),
 }
+
+/// The alignment of the [`RawCommand`] type.
+const ALIGN: usize = align_of::<usize>();
 
 /// Removes the alignment requirement of the inner type.
 #[repr(C, packed)]
@@ -41,7 +59,7 @@ impl<T: Command> RawCommand<T> {
     /// Creates a new [`RawCommand<T>`] from the provided [`Command`].
     pub fn new(data: T) -> Self {
         unsafe extern "C" fn execute_fn<T: Command>(this: *mut T, app: &mut App) {
-            if std::mem::align_of::<T>() > std::mem::align_of::<usize>() {
+            if align_of::<T>() > ALIGN {
                 unsafe { this.read_unaligned().execute(app) }
             } else {
                 unsafe { this.read().execute(app) }
@@ -49,7 +67,7 @@ impl<T: Command> RawCommand<T> {
         }
 
         unsafe extern "C" fn drop_fn<T: Command>(this: *mut T) {
-            if std::mem::align_of::<T>() > std::mem::align_of::<usize>() {
+            if align_of::<T>() > ALIGN {
                 drop(unsafe { this.read_unaligned() });
             } else {
                 unsafe { this.drop_in_place() };
@@ -108,6 +126,8 @@ pub struct CommandList {
     cursor: usize,
 }
 
+unsafe impl Send for CommandList {}
+
 impl Default for CommandList {
     fn default() -> Self {
         Self {
@@ -126,8 +146,6 @@ impl CommandList {
     /// The caller must ensure that the new capacity is strictly greater than
     /// the current capacity.
     pub unsafe fn grow_unchecked(&mut self, mut new_capacity: usize) {
-        const ALIGN: usize = align_of::<usize>();
-
         let mask = unsafe { ALIGN.unchecked_sub(1) };
         new_capacity = new_capacity
             .checked_add(mask)
@@ -251,7 +269,7 @@ impl<'a> Iterator for DrainCommandList<'a> {
         // Calculate the next position.
         unsafe {
             self.cursor = self.cursor.unchecked_add(r.vtable.size);
-            let mask = align_of::<usize>().unchecked_sub(1);
+            let mask = ALIGN.unchecked_sub(1);
             self.cursor = self.cursor.unchecked_add(mask) & !mask;
         }
 
@@ -273,4 +291,88 @@ fn command_list_overflow() -> ! {
 }
 
 /// A list of commands to be executed on the [`App`] once exclusive access can be obtained.
-pub struct Commands {}
+pub struct Commands<'a> {
+    /// The list of commands that have been accumulated.
+    list: &'a mut CommandList,
+    /// The entity ID allocator.
+    id_allocator: &'a EntityIdAllocator,
+}
+
+impl<'w> Commands<'w> {
+    /// Pushes the provided command to the list.
+    #[inline]
+    pub fn append(&mut self, command: impl Command) {
+        self.list.push(command);
+    }
+
+    /// Spawns an empty entity and returns a [`EntityCommands`] instance that can be used to
+    /// spawn components on the entity.
+    pub fn spawn_empty(&mut self) -> EntityCommands<'_, 'w> {
+        let target = self.id_allocator.reserve_one();
+        EntityCommands {
+            commands: self,
+            target,
+        }
+    }
+
+    /// Spawns an entity with the provided list of components.
+    pub fn spawn(&mut self, components: impl ComponentList) -> EntityCommands<'_, 'w> {
+        let mut entity = self.spawn_empty();
+        entity.insert(components);
+        entity
+    }
+
+    /// Triggers an event with the provided data.
+    pub fn trigger_event(&mut self, target: EntityId, mut event: impl Event) {
+        self.append(move |app: &mut App| app.trigger_event(target, &mut event))
+    }
+
+    /// Despawns the provided entity.
+    pub fn despawn(&mut self, entity: EntityId) {
+        self.append(move |app: &mut App| app.despawn(entity));
+    }
+}
+
+unsafe impl SystemParam for Commands<'_> {
+    type State = Exclusive<CommandList>;
+    type Item<'w> = Commands<'w>;
+
+    #[inline]
+    fn initialize(_app: &mut App, _access: &mut SystemAccess) -> Self::State {
+        Exclusive::default()
+    }
+
+    #[inline]
+    unsafe fn apply_deferred(state: &mut Self::State, app: &mut App) {
+        state.get_mut().apply(app);
+    }
+
+    #[inline]
+    unsafe fn fetch<'w>(state: &'w mut Self::State, app: &'w App) -> Self::Item<'w> {
+        Commands {
+            id_allocator: app.entities().id_allocator(),
+            list: state.get_mut(),
+        }
+    }
+}
+
+/// Like [`Commands`], but scoped to a specific entity.
+pub struct EntityCommands<'cmd, 'w> {
+    commands: &'cmd mut Commands<'w>,
+    target: EntityId,
+}
+
+impl EntityCommands<'_, '_> {
+    /// Returns the ID of the entity that will be spawned.
+    #[inline]
+    pub fn id(&self) -> EntityId {
+        self.target
+    }
+
+    /// Inserts components into the entity.
+    pub fn insert(&mut self, list: impl ComponentList) {
+        let target = self.target;
+        self.commands
+            .append(move |app: &mut App| app.entity_mut(target).insert(list));
+    }
+}

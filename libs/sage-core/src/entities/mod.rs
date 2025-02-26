@@ -22,3 +22,5 @@ pub use self::archetype_components::*;
 
 mod component_vec;
 pub use self::component_vec::*;
+
+pub mod modify_entity;

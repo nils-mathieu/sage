@@ -15,6 +15,20 @@ pub struct Window {
 }
 
 impl Window {
+    /// Creates a new [`Window`] from a [`winit`] window object.
+    pub(crate) fn new(winit_window: Arc<WinitWindow>) -> Self {
+        let scale_factor = winit_window.scale_factor();
+        let surface_size = winit_window.inner_size();
+
+        Self {
+            winit_window,
+            surface_size,
+            scale_factor,
+            pointer_position: None,
+            focused: true,
+        }
+    }
+
     /// Returns the concrete [`winit`] window object.
     ///
     /// This can be used to interact with the underlying window directly, changing its properties

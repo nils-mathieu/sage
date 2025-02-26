@@ -1,11 +1,12 @@
 use {
-    crate::{STARTUP_SCHEDULE, Window, events},
+    crate::{EventLoopGlobal, STARTUP_SCHEDULE, Window, events},
     sage_core::{app::App, entities::EntityId},
+    std::sync::Arc,
     winit::{
         application::ApplicationHandler,
         event::{DeviceEvent, DeviceId, WindowEvent},
         event_loop::ActiveEventLoop,
-        window::WindowId,
+        window::{Window as WinitWindow, WindowId},
     },
 };
 
@@ -42,15 +43,34 @@ impl AppRunner<'_> {
     /// control.
     fn end_of_user_flow(&mut self, event_loop: &ActiveEventLoop) {
         // Close the window whose entity/component has been removed.
-        self.windows.retain(|_, &mut entity_id| {
+        self.windows.retain(|&window_id, &mut entity_id| {
             self.app
-                .get_entity_mut(entity_id)
-                .is_some_and(|entity| entity.has_component::<Window>())
+                .get_entity(entity_id)
+                .and_then(|entity| entity.try_get::<Window>())
+                .is_some_and(|window| window.winit_window().id() == window_id)
         });
 
         // If no more windows are open, exit the event loop.
         if self.windows.is_empty() {
             event_loop.exit();
+        }
+
+        let global = self.app.global_mut::<EventLoopGlobal>();
+
+        if global.exit_requested() {
+            event_loop.exit();
+        }
+        if let Some(windows) = global.take_pending_windows() {
+            for (entity, attrs) in windows {
+                let winit_window: Arc<WinitWindow> = event_loop
+                    .create_window(attrs)
+                    .expect("Failed to create `winit` window")
+                    .into();
+                self.windows.insert(winit_window.id(), entity);
+                self.app
+                    .entity_mut(entity)
+                    .insert(Window::new(winit_window));
+            }
         }
     }
 }
@@ -58,6 +78,7 @@ impl AppRunner<'_> {
 impl<T: 'static> ApplicationHandler<T> for AppRunner<'_> {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if !self.initialized {
+            self.app.init_global::<EventLoopGlobal>();
             self.app.run_schedule(STARTUP_SCHEDULE);
             self.end_of_user_flow(event_loop);
             self.initialized = true;

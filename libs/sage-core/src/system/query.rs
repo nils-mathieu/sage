@@ -94,18 +94,18 @@ where
     type Item<'w> = Query<'w, P>;
     type State = QueryState<P>;
 
-    #[inline]
-    fn register_access(access: &mut SystemAccess) {
+    fn initialize(app: &mut App, access: &mut SystemAccess) -> Self::State {
         P::register_access(access);
+
+        let mut state = QueryState::new(app);
+        unsafe { state.update_matched_archetypes(app) };
+        state
     }
 
-    #[inline]
-    fn create_state(app: &mut App) -> Self::State {
-        QueryState::new(app)
-    }
+    unsafe fn apply_deferred(_state: &mut Self::State, _app: &mut App) {}
 
     #[inline]
-    unsafe fn fetch<'w>(state: &'w Self::State, app: &'w App) -> Self::Item<'w> {
+    unsafe fn fetch<'w>(state: &'w mut Self::State, app: &'w App) -> Self::Item<'w> {
         unsafe { state.make_query_unchecked(app) }
     }
 }

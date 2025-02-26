@@ -5,7 +5,7 @@ type UuidStorage = [u32; 4];
 type UuidStorage = [u64; 2];
 
 /// A globally unique identifier for a global resource stored in a [`Globals`] collection.
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Uuid(UuidStorage);
 
 impl Uuid {

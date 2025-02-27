@@ -1,5 +1,10 @@
 //! The UI framework of the Sage game engine.
 
+use {
+    sage_core::{RENDER_SCHEDULE, app::App, schedule::SystemConfig},
+    sage_wgpu::{PREPARE_FRAME, SUBMIT_FRAME},
+};
+
 pub use cosmic_text;
 
 mod ui_node;
@@ -10,11 +15,6 @@ pub use self::fonts::*;
 
 mod background;
 pub use self::background::*;
-
-use {
-    sage_core::{RENDER_SCHEDULE, app::App, schedule::SystemConfig},
-    sage_wgpu::{PREPARE_FRAME, SUBMIT_FRAME},
-};
 
 pub mod rendering;
 

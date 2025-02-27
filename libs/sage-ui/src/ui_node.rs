@@ -5,7 +5,7 @@ use {
 
 /// A **component** that stores the computed metrics of a particular node.
 #[derive(Default)]
-pub struct UiNodeMetrics {
+pub struct UiNode {
     /// The Z-index of the node.
     pub z_index: i32,
     /// The computed size of the node in physical pixels.
@@ -18,8 +18,8 @@ pub struct UiNodeMetrics {
     pub baseline: IVec2,
 }
 
-unsafe impl TypeUuid for UiNodeMetrics {
+unsafe impl TypeUuid for UiNode {
     const UUID: Uuid = Uuid::from_u128(0xed163e1c38ff07d7e1c13b08e1ce6c9a);
 }
 
-impl Component for UiNodeMetrics {}
+impl Component for UiNode {}

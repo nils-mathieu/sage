@@ -10,7 +10,7 @@ pub fn main() {
         app.add_event_handler(exit_on_escape);
 
         app.spawn((
-            sage::ui::UiNodeMetrics {
+            sage::ui::UiNode {
                 z_index: 0,
                 size: sage::UVec2::new(100, 100),
                 position: sage::IVec2::new(100, 100),

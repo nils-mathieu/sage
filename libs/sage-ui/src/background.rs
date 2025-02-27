@@ -1,6 +1,6 @@
 use {
     crate::{
-        UiNodeMetrics,
+        UiNode,
         rendering::{RectInstance, UiPass},
     },
     glam::Vec4,
@@ -47,16 +47,16 @@ impl Component for Background {}
 /// A **system** that draws backgrounds behind the nodes.
 pub(crate) fn draw_backgrounds(
     mut ui_pass: Glob<&mut UiPass>,
-    query: Query<(&UiNodeMetrics, &Background)>,
+    query: Query<(&UiNode, &Background)>,
 ) {
-    for (metrics, bg) in query.iter() {
+    for (node, bg) in query.iter() {
         let has_background = !bg.color.is_transparent();
         let has_border = bg.border_thickness > 0.0 && !bg.border_color.is_transparent();
 
         if has_background {
             let mut r: Vec4 = bg.corner_radius.into();
-            let mut position = metrics.position.as_vec2();
-            let mut size = metrics.size.as_vec2();
+            let mut position = node.position.as_vec2();
+            let mut size = node.size.as_vec2();
 
             if has_border {
                 let inset = bg.border_thickness * 0.5;
@@ -77,18 +77,18 @@ pub(crate) fn draw_backgrounds(
 
         if has_border {
             ui_pass.add_rect_no_draw(RectInstance {
-                position: metrics.position,
-                size: metrics.size,
+                position: node.position,
+                size: node.size,
                 color: bg.border_color,
                 corner_radius: Vec4::from(bg.corner_radius).clamp(
                     Vec4::ZERO,
-                    Vec4::splat((metrics.size.as_vec2() * 0.5).min_element()),
+                    Vec4::splat((node.size.as_vec2() * 0.5).min_element()),
                 ),
                 border_thickness: bg.border_thickness,
                 _padding: [0; 2],
             });
         }
 
-        ui_pass.submit_rects(metrics.z_index);
+        ui_pass.submit_rects(node.z_index);
     }
 }

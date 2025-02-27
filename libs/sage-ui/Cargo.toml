@@ -14,5 +14,16 @@ sage-core.workspace = true
 sage-wgpu.workspace = true
 sage-hierarchy.workspace = true
 sage-color = { workspace = true, features = ["bytemuck"] }
+# TODO: Move event handling and input types to a separate crate.
+sage-winit.workspace = true
+
 glam = { workspace = true, features = ["bytemuck"] }
 bytemuck = { workspace = true, features = ["derive"] }
+foldhash.workspace = true
+bitflags.workspace = true
+hashbrown.workspace = true
+
+cosmic-text = { version = "0.12", default-features = false, features = ["std"] }
+swash = { version = "0.2" }
+etagere = { version = "0.2", default-features = false }
+lru = { version = "0.13", default-features = false, features = ["hashbrown"] }

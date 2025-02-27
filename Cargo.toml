@@ -22,3 +22,5 @@ hashbrown = { version = "0.15", default-features = false }
 foldhash = { version = "0.1", default-features = false }
 glam = { version = "0.30", default-features = false, features = ["std"] }
 bytemuck = { version = "1", default-features = false }
+etagere = { version = "0.1", default-features = false }
+bitflags = { version = "2", default-features = false }

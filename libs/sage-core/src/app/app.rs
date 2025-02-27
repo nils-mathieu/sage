@@ -1,10 +1,11 @@
 use {
+    super::AppCell,
     crate::{
         OpaquePtr, Uuid,
         app::{Event, EventContext, EventHandlers, FromApp, Global, Globals, RawEventContext},
         entities::{ComponentList, Entities, EntityId, EntityMut, EntityRef},
         schedule::{Schedule, SystemConfig},
-        system::IntoSystem,
+        system::{IntoSystem, QueryIntoIter, QueryParam, QueryState, SystemAccess},
     },
     std::mem::ManuallyDrop,
 };
@@ -204,6 +205,39 @@ impl App {
     #[track_caller]
     pub fn entity(&self, entity: EntityId) -> EntityRef {
         self.entities.entity(entity)
+    }
+
+    /// Returns an iterator over the entities that match the privided query.
+    pub fn query_mut<P: QueryParam>(&mut self) -> QueryIntoIter<P> {
+        let mut access = SystemAccess::default();
+        let mut state = QueryState::new(self, &mut access);
+        unsafe { state.update_matched_archetypes(self) };
+        unsafe { state.into_iter(AppCell::new(self)) }
+    }
+
+    /// Queries a single entity that matches the provided query.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if the query does not match exactly one entity.
+    #[track_caller]
+    pub fn single_mut<P: QueryParam>(&mut self) -> P::Item<'_> {
+        let mut access = SystemAccess::default();
+        let mut state = QueryState::<P>::new(self, &mut access);
+        unsafe { state.update_matched_archetypes(self) };
+
+        unsafe {
+            let count = state.matched_count(AppCell::new(self));
+            assert_eq!(
+                count, 1,
+                "Expected exactly one entity to match the query, but found {count}",
+            );
+
+            state
+                .into_iter(AppCell::new(self))
+                .next()
+                .unwrap_unchecked()
+        }
     }
 
     // ========================================================================================== //

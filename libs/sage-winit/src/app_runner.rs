@@ -189,6 +189,7 @@ impl<T: 'static> ApplicationHandler<T> for AppRunner {
                 }
             }
             WindowEvent::Resized(new_size) => {
+                state.size = new_size;
                 self.app
                     .entity_mut(state.entity)
                     .get_mut::<Window>()

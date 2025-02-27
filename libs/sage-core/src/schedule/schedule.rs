@@ -8,14 +8,24 @@ use {
     petgraph::{Graph, graph::NodeIndex},
 };
 
+struct ScheduleNode<I> {
+    /// The index of the node with the graph while it's being built.
+    ///
+    /// This is only used during the algorithm building the schedule.
+    node_id: NodeIndex,
+
+    /// The system itself.
+    system: RawSystem<I>,
+    /// The configuration of the system.
+    config: SystemConfig,
+}
+
 /// A directed acyclic graph of systems to run (eventually in parallel).
 pub struct Schedule<I = ()> {
-    /// The systems that make up the schedule.
-    systems: Vec<(SystemConfig, NodeIndex)>,
-    /// The mapping from tags to indices in the graph.
-    tag_to_nodes: hashbrown::HashMap<Uuid, Vec<NodeIndex>, foldhash::fast::FixedState>,
-    /// The systems that make up the schedule.
-    graph: Graph<RawSystem<I>, ()>,
+    /// The systems that have been inserted so far.
+    systems: Vec<ScheduleNode<I>>,
+    /// The order in which the schedules executes.
+    order: Vec<usize>,
     /// Whether the schedule needs to be rebuilt.
     needs_rebuild: bool,
 }
@@ -29,18 +39,11 @@ impl<I> Schedule<I> {
     /// same [`App`].
     #[inline]
     pub unsafe fn add_system_raw(&mut self, config: SystemConfig, system: RawSystem<I>) {
-        // Add the system to the graph.
-        let node = self.graph.add_node(system);
-
-        // Register the tags.
-        for &tag in &config.tags {
-            self.tag_to_nodes.entry(tag).or_default().push(node);
-        }
-
-        // Add the system to the list of systems.
-        self.systems.push((config, node));
-
-        // Mark the schedule as dirty.
+        self.systems.push(ScheduleNode {
+            system,
+            config,
+            node_id: NodeIndex::end(),
+        });
         self.needs_rebuild = true;
     }
 
@@ -62,38 +65,49 @@ impl<I> Schedule<I> {
     /// Rebuilds the schedule.
     pub fn rebuild(&mut self) {
         if self.needs_rebuild {
-            self.force_rebuild();
+            self.rebuild_cold();
         }
     }
 
-    fn force_rebuild(&mut self) {
+    #[cold]
+    fn rebuild_cold(&mut self) {
         self.needs_rebuild = false;
 
-        self.graph.clear_edges();
+        let mut graph = Graph::new();
+        let mut tag_map =
+            hashbrown::HashMap::<Uuid, Vec<NodeIndex>, foldhash::fast::FixedState>::default();
 
-        for (config, node) in &self.systems {
-            for run_before_tag in &config.run_before {
-                let run_before_nodes = self
-                    .tag_to_nodes
+        for (node_index, node) in self.systems.iter_mut().enumerate() {
+            node.node_id = graph.add_node(node_index);
+            for &tag in &node.config.tags {
+                tag_map.entry(tag).or_default().push(node.node_id);
+            }
+        }
+
+        for node in self.systems.iter() {
+            for run_before_tag in &node.config.run_before {
+                let run_before_nodes = tag_map
                     .get(run_before_tag)
-                    .map(|x| &**x)
+                    .map(Vec::as_slice)
                     .unwrap_or_default();
                 for &after in run_before_nodes {
-                    self.graph.add_edge(*node, after, ());
+                    graph.add_edge(node.node_id, after, ());
                 }
             }
 
-            for run_after_tag in &config.run_after {
-                let run_after_nodes = self
-                    .tag_to_nodes
+            for run_after_tag in &node.config.run_after {
+                let run_after_nodes = tag_map
                     .get(run_after_tag)
-                    .map(|x| &**x)
+                    .map(Vec::as_slice)
                     .unwrap_or_default();
                 for &before in run_after_nodes {
-                    self.graph.add_edge(before, *node, ());
+                    graph.add_edge(before, node.node_id, ());
                 }
             }
         }
+
+        let sorted = petgraph::algo::toposort(&graph, None).expect("Cycles detected");
+        self.order = sorted.into_iter().map(|x| graph[x]).collect();
     }
 
     /// Runs the schedule on the given state.
@@ -108,11 +122,21 @@ impl<I> Schedule<I> {
     {
         self.rebuild();
 
-        for (_, system) in &mut self.systems {
-            unsafe { system.run(input.clone(), AppCell::new(app)) };
+        for &index in &self.order {
+            unsafe {
+                // SAFETY: The `order` vector contains only valid indices.
+                let node = self.systems.get_unchecked_mut(index);
+
+                node.system.run(input.clone(), AppCell::new(app));
+            }
         }
-        for system in &mut self.graph.node_weights_mut() {
-            unsafe { system.apply_deferred(app) };
+        for &index in &self.order {
+            unsafe {
+                // SAFETY: The `order` vector contains only valid indices.
+                let node = self.systems.get_unchecked_mut(index);
+
+                node.system.apply_deferred(app);
+            }
         }
     }
 }
@@ -121,8 +145,7 @@ impl<I> Default for Schedule<I> {
     fn default() -> Self {
         Self {
             systems: Vec::new(),
-            tag_to_nodes: hashbrown::HashMap::default(),
-            graph: Graph::default(),
+            order: Vec::new(),
             needs_rebuild: false,
         }
     }

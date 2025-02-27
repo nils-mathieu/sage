@@ -1,6 +1,6 @@
 use {
     crate::{
-        OpaquePtr,
+        OpaquePtr, Uuid,
         app::{App, AppCell},
     },
     std::{marker::PhantomData, mem::MaybeUninit},
@@ -117,9 +117,100 @@ impl<I, O> RawSystem<I, O> {
     }
 }
 
+type Set<T> = hashbrown::HashSet<T, foldhash::fast::FixedState>;
+
 /// Contains the resources that a [`System`] may access during its execution.
 #[derive(Default)]
-pub struct SystemAccess {}
+pub struct SystemAccess {
+    /// The components that the system wants to write to.
+    pub write_components: Set<Uuid>,
+    /// The components that the system wants to read from.
+    pub read_components: Set<Uuid>,
+    /// The globals that the system wants to write to.
+    pub write_globals: Set<Uuid>,
+    /// The globals that the system wants to read from.
+    pub read_globals: Set<Uuid>,
+}
+
+impl SystemAccess {
+    /// Attempts to acquire write access to a component.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if access to the component is already requested.
+    pub fn write_component(&mut self, uuid: Uuid) {
+        if self.read_components.contains(&uuid) {
+            panic!(
+                "Component with UUID {:?} is already requested for read access",
+                uuid,
+            );
+        }
+
+        if self.write_components.contains(&uuid) {
+            panic!(
+                "Component with UUID {:?} is already requested for write access",
+                uuid,
+            );
+        }
+
+        unsafe { self.write_components.insert_unique_unchecked(uuid) };
+    }
+
+    /// Attempts to acquire read access to a component.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if write access to the component is already requested.
+    pub fn read_component(&mut self, uuid: Uuid) {
+        if self.write_components.contains(&uuid) {
+            panic!(
+                "Component with UUID {:?} is already requested for write access",
+                uuid,
+            );
+        }
+
+        unsafe { self.read_components.insert_unique_unchecked(uuid) };
+    }
+
+    /// Attempts to acquire write access to a global.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if access to the global is already requested.
+    pub fn write_global(&mut self, uuid: Uuid) {
+        if self.read_globals.contains(&uuid) {
+            panic!(
+                "Global with UUID {:?} is already requested for read access",
+                uuid,
+            );
+        }
+
+        if self.write_globals.contains(&uuid) {
+            panic!(
+                "Global with UUID {:?} is already requested for write access",
+                uuid,
+            );
+        }
+
+        unsafe { self.write_globals.insert_unique_unchecked(uuid) };
+    }
+
+    /// Attempts to acquire read access to a global.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if write access to the global is already requested.
+    pub fn read_global(&mut self, uuid: Uuid) {
+        if self.write_globals.contains(&uuid) {
+            panic!(
+                "Global with UUID {:?} is already requested for write access",
+                uuid,
+            );
+        }
+
+        unsafe { self.read_globals.insert_unique_unchecked(uuid) };
+    }
+}
 
 /// A trait for system input types.
 pub trait SystemInput {

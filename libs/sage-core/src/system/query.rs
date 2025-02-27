@@ -1,10 +1,14 @@
-use crate::{
-    app::{App, AppCell},
-    entities::{
-        ArchetypeId, ArchetypeStorage, Component, EntityId, EntityIdAllocator, EntityIndex,
-        EntityLocation,
+use {
+    crate::{
+        Uuid,
+        app::{App, AppCell},
+        entities::{
+            ArchetypeId, ArchetypeStorage, Component, EntityId, EntityIdAllocator, EntityIndex,
+            EntityLocation,
+        },
+        system::{SystemAccess, SystemParam},
     },
-    system::{SystemAccess, SystemParam},
+    std::ops::{Deref, DerefMut},
 };
 
 /// Contains cached state for a [`Query`] instance allowing efficient iteration
@@ -19,17 +23,23 @@ pub struct QueryState<P: QueryParam> {
     /// This is used when new archetypes are added to the application state and the query
     /// needs to eventually take them into account.
     largest_checked_archetype_id: ArchetypeId,
+    /// The filter that the query uses to match archetypes.
+    filter: QueryFilter,
 }
 
 impl<P: QueryParam> QueryState<P> {
     /// Creates a new [`QueryState<P>`] instance for the provided [`App`].
-    pub fn new(app: &mut App) -> Self {
-        let param_state = P::create_state(app);
+    pub fn new(app: &mut App, access: &mut SystemAccess) -> Self {
+        let mut access = QueryAccess {
+            system_access: access,
+            filter: QueryFilter::default(),
+        };
 
         Self {
             matched_archetypes: Vec::default(),
-            param_state,
+            param_state: P::initialize(app, &mut access),
             largest_checked_archetype_id: 0,
+            filter: access.filter,
         }
     }
 
@@ -39,12 +49,49 @@ impl<P: QueryParam> QueryState<P> {
     ///
     /// The caller must ensure that the provided [`App`] is the same one as the one
     /// used to create the [`QueryState<P>`] instance.
+    #[inline]
     pub unsafe fn update_matched_archetypes(&mut self, app: &App) {
+        if app.entities().archetype_storages().len() > self.largest_checked_archetype_id {
+            self.update_matched_archetypes_cold(app);
+        }
+    }
+
+    #[cold]
+    fn update_matched_archetypes_cold(&mut self, app: &App) {
         let new_max_id = app.entities().archetype_storages().len();
 
-        for _id in self.largest_checked_archetype_id..new_max_id {}
+        for archetype_id in self.largest_checked_archetype_id..new_max_id {
+            let archetype = unsafe {
+                app.entities()
+                    .archetype_storages()
+                    .get_unchecked(archetype_id)
+            };
+
+            if self.filter.matches_archetype(archetype) {
+                self.matched_archetypes.push(archetype_id);
+            }
+        }
 
         self.largest_checked_archetype_id = new_max_id;
+    }
+
+    /// Returns the number of matches for the query.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the provided [`App`] is the same one as the one
+    /// used to create the [`QueryState<P>`] instance.
+    pub unsafe fn matched_count(&self, app: AppCell) -> usize {
+        self.matched_archetypes
+            .iter()
+            .map(|&archetype| unsafe {
+                app.get_ref()
+                    .entities()
+                    .archetype_storages()
+                    .get_unchecked(archetype)
+                    .len()
+            })
+            .sum()
     }
 
     /// Creates a [`Query<P>`] instance that uses this [`QueryState<P>`] to allow
@@ -58,8 +105,32 @@ impl<P: QueryParam> QueryState<P> {
     /// - The caller must ensure that the provided application state is the same one as the one
     ///   used to create the [`QueryState<P>`] instance.
     #[inline]
-    pub unsafe fn make_query_unchecked<'w>(&'w self, app: AppCell<'w>) -> Query<'w, P> {
+    pub unsafe fn make_query<'w>(&'w self, app: AppCell<'w>) -> Query<'w, P> {
         Query { app, state: self }
+    }
+
+    /// Turns this [`QueryState<P>`] into a consuming [`QueryIntoIter<P>`] instance.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that:
+    ///
+    /// 1. The provided application state is the same one as the one used to create the
+    ///    [`QueryState<P>`] instance.
+    ///
+    /// 2. The component accesses requested by the query are available in the provided
+    ///    application state.
+    #[inline]
+    pub unsafe fn into_iter(self, app: AppCell) -> QueryIntoIter<P> {
+        let iter_state = unsafe { P::create_iter_state(&self.param_state, app) };
+
+        QueryIntoIter {
+            state: self.param_state,
+            iter_state,
+            archetypes: unsafe { app.get_ref().entities().archetype_storages() },
+            archetype_ids: self.matched_archetypes.into_iter(),
+            range: 0..0,
+        }
     }
 }
 
@@ -78,8 +149,8 @@ impl<'w, P: QueryParam> Query<'w, P> {
     /// Creates a new iterator that returns the entities that match the query's filter.
     pub fn iter(&mut self) -> QueryIter<'w, P> {
         QueryIter {
-            state: self.state,
-            iter_state: P::create_iter_state(&self.state.param_state, self.app),
+            state: &self.state.param_state,
+            iter_state: unsafe { P::create_iter_state(&self.state.param_state, self.app) },
             archetypes: unsafe { self.app.get_ref().entities().archetype_storages() },
             archetype_ids: self.state.matched_archetypes.iter(),
             range: 0..0,
@@ -95,9 +166,7 @@ where
     type State = QueryState<P>;
 
     fn initialize(app: &mut App, access: &mut SystemAccess) -> Self::State {
-        P::register_access(access);
-
-        let mut state = QueryState::new(app);
+        let mut state = QueryState::new(app, access);
         unsafe { state.update_matched_archetypes(app) };
         state
     }
@@ -106,13 +175,13 @@ where
 
     #[inline]
     unsafe fn fetch<'w>(state: &'w mut Self::State, app: AppCell<'w>) -> Self::Item<'w> {
-        unsafe { state.make_query_unchecked(app) }
+        unsafe { state.make_query(app) }
     }
 }
 
 /// An [`Iterator`] over the entities that a query matches.
 pub struct QueryIter<'w, P: QueryParam> {
-    state: &'w QueryState<P>,
+    state: &'w P::State,
     iter_state: P::IterState<'w>,
     archetypes: &'w [ArchetypeStorage],
     archetype_ids: std::slice::Iter<'w, ArchetypeId>,
@@ -128,11 +197,7 @@ impl<'w, P: QueryParam> Iterator for QueryIter<'w, P> {
                 Some(index) => {
                     // SAFETY: We're keeping all invariants in check.
                     unsafe {
-                        break Some(P::fetch(
-                            &self.state.param_state,
-                            &mut self.iter_state,
-                            index,
-                        ));
+                        break Some(P::fetch(self.state, &mut self.iter_state, index));
                     }
                 }
                 None => {
@@ -143,17 +208,123 @@ impl<'w, P: QueryParam> Iterator for QueryIter<'w, P> {
 
                     // SAFETY: We're keeping all invariants in check.
                     unsafe {
-                        P::set_archetype_storage(
-                            &self.state.param_state,
-                            &mut self.iter_state,
-                            storage,
-                        );
+                        P::set_archetype_storage(self.state, &mut self.iter_state, storage);
                     }
 
                     self.range = 0..storage.len();
                 }
             }
         }
+    }
+}
+
+/// An iterator that consumes a [`Query`] and returns the entities that match the query's filter.
+pub struct QueryIntoIter<'w, P: QueryParam> {
+    state: P::State,
+    iter_state: P::IterState<'w>,
+    archetypes: &'w [ArchetypeStorage],
+    archetype_ids: std::vec::IntoIter<ArchetypeId>,
+    range: std::ops::Range<usize>,
+}
+
+impl<'w, P: QueryParam> Iterator for QueryIntoIter<'w, P> {
+    type Item = P::Item<'w>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            match self.range.next() {
+                Some(index) => {
+                    // SAFETY: We're keeping all invariants in check.
+                    unsafe {
+                        break Some(P::fetch(&self.state, &mut self.iter_state, index));
+                    }
+                }
+                None => {
+                    let archetype_id = self.archetype_ids.next()?;
+
+                    // SAFETY: The archetype IDs stored in the state are always valid.
+                    let storage = unsafe { self.archetypes.get_unchecked(archetype_id) };
+
+                    // SAFETY: We're keeping all invariants in check.
+                    unsafe {
+                        P::set_archetype_storage(&self.state, &mut self.iter_state, storage);
+                    }
+
+                    self.range = 0..storage.len();
+                }
+            }
+        }
+    }
+}
+
+type Set<T> = hashbrown::HashSet<T, foldhash::fast::FixedState>;
+
+/// The filter that a query uses to match entities.
+#[derive(Default, Debug)]
+pub struct QueryFilter {
+    /// The components that the query wants to match.
+    ///
+    /// Components present here are guaranteed to be present in all entities that the query
+    /// matches.
+    pub with: Set<Uuid>,
+    /// The components that the query wants to exclude.
+    ///
+    /// Components present here are guaranteed to be absent in all entities that the query matches.
+    pub without: Set<Uuid>,
+}
+
+impl QueryFilter {
+    /// Returns whether the filter matches the provided archetype.
+    pub fn matches_archetype(&self, archetype: &ArchetypeStorage) -> bool {
+        for &with in &self.with {
+            if !archetype.has_component(with) {
+                return false;
+            }
+        }
+
+        for &without in &self.without {
+            if archetype.has_component(without) {
+                return false;
+            }
+        }
+
+        true
+    }
+}
+
+/// A structure that holds the query parameters and resources that a query accesses.
+pub struct QueryAccess<'a> {
+    /// The associated system access.
+    pub system_access: &'a mut SystemAccess,
+    /// The query filter being built.
+    pub filter: QueryFilter,
+}
+
+impl QueryAccess<'_> {
+    /// Registers a component that the query wants to include.
+    pub fn with(&mut self, component: Uuid) {
+        self.filter.with.insert(component);
+    }
+
+    /// Registers a component that the query wants to exclude.
+    pub fn without(&mut self, component: Uuid) {
+        self.filter.without.insert(component);
+    }
+}
+
+impl Deref for QueryAccess<'_> {
+    type Target = SystemAccess;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        self.system_access
+    }
+}
+
+impl DerefMut for QueryAccess<'_> {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.system_access
     }
 }
 
@@ -183,14 +354,18 @@ pub unsafe trait QueryParam {
     /// the query's matched entities.
     type IterState<'w>;
 
-    /// Registers the resources that the query parameter requires to construct itself.
-    fn register_access(access: &mut SystemAccess);
-
     /// Creates an instance of the query parameter's state.
-    fn create_state(app: &mut App) -> Self::State;
+    fn initialize(app: &mut App, access: &mut QueryAccess) -> Self::State;
 
     /// Creates a new iterator state.
-    fn create_iter_state<'w>(state: &Self::State, app: AppCell<'w>) -> Self::IterState<'w>;
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the provided [`AppCell`] is the same one as the one used to
+    /// create the query parameter's state.
+    ///
+    /// It must provide access to all resources required by the query parameter.
+    unsafe fn create_iter_state<'w>(state: &Self::State, app: AppCell<'w>) -> Self::IterState<'w>;
 
     /// Updates the provided iterator state for a new archetype storage.
     ///
@@ -237,19 +412,26 @@ pub unsafe trait QueryParam {
     ) -> Self::Item<'w>;
 }
 
+/// Like [`QueryParam`], but with the additional requirement that the query parameter
+/// must only *read* from the application state.
+///
+/// # Safety
+///
+/// Implementors of this trait must ensure that the query parameter only reads from the
+/// application state.
+pub unsafe trait ReadOnlyQueryParam: QueryParam {}
+
 unsafe impl QueryParam for EntityId {
     type State = ();
     type Item<'w> = EntityId;
     type IterState<'w> = (*const EntityIndex, &'w EntityIdAllocator<EntityLocation>);
 
-    fn create_state(_app: &mut App) -> Self::State {}
+    fn initialize(_app: &mut App, _access: &mut QueryAccess) -> Self::State {}
 
-    fn create_iter_state<'w>(_state: &Self::State, app: AppCell<'w>) -> Self::IterState<'w> {
+    unsafe fn create_iter_state<'w>(_state: &Self::State, app: AppCell<'w>) -> Self::IterState<'w> {
         let id_allocator = unsafe { app.get_ref().entities().id_allocator() };
         (std::ptr::null(), id_allocator)
     }
-
-    fn register_access(_access: &mut SystemAccess) {}
 
     unsafe fn set_archetype_storage<'w>(
         _state: &Self::State,
@@ -272,19 +454,25 @@ unsafe impl QueryParam for EntityId {
     }
 }
 
+unsafe impl ReadOnlyQueryParam for EntityId {}
+
 unsafe impl<T: Component> QueryParam for &'_ T {
     type State = ();
     type Item<'w> = &'w T;
     type IterState<'w> = *const T;
 
-    fn create_state(_app: &mut App) -> Self::State {}
-
-    #[inline]
-    fn create_iter_state<'w>(_state: &Self::State, _app: AppCell<'w>) -> Self::IterState<'w> {
-        std::ptr::null()
+    fn initialize(_app: &mut App, access: &mut QueryAccess) -> Self::State {
+        access.with(T::UUID);
+        access.system_access.read_component(T::UUID);
     }
 
-    fn register_access(_access: &mut SystemAccess) {}
+    #[inline]
+    unsafe fn create_iter_state<'w>(
+        _state: &Self::State,
+        _app: AppCell<'w>,
+    ) -> Self::IterState<'w> {
+        std::ptr::null()
+    }
 
     unsafe fn set_archetype_storage<'w>(
         _state: &Self::State,
@@ -310,19 +498,25 @@ unsafe impl<T: Component> QueryParam for &'_ T {
     }
 }
 
+unsafe impl<T: Component> ReadOnlyQueryParam for &'_ T {}
+
 unsafe impl<T: Component> QueryParam for &'_ mut T {
     type State = ();
     type Item<'w> = &'w mut T;
     type IterState<'w> = *mut T;
 
-    fn create_state(_app: &mut App) -> Self::State {}
-
-    #[inline]
-    fn create_iter_state<'w>(_state: &Self::State, _app: AppCell<'w>) -> Self::IterState<'w> {
-        std::ptr::null_mut()
+    fn initialize(_app: &mut App, access: &mut QueryAccess) -> Self::State {
+        access.with(T::UUID);
+        access.write_component(T::UUID);
     }
 
-    fn register_access(_access: &mut SystemAccess) {}
+    #[inline]
+    unsafe fn create_iter_state<'w>(
+        _state: &Self::State,
+        _app: AppCell<'w>,
+    ) -> Self::IterState<'w> {
+        std::ptr::null_mut()
+    }
 
     unsafe fn set_archetype_storage<'w>(
         _state: &Self::State,
@@ -348,6 +542,89 @@ unsafe impl<T: Component> QueryParam for &'_ mut T {
     }
 }
 
+unsafe impl<T: Component> QueryParam for Option<&'_ T> {
+    type State = ();
+    type IterState<'w> = *const T;
+    type Item<'w> = Option<&'w T>;
+
+    fn initialize(_app: &mut App, access: &mut QueryAccess) -> Self::State {
+        access.read_component(T::UUID);
+    }
+
+    unsafe fn create_iter_state<'w>(
+        _state: &Self::State,
+        _app: AppCell<'w>,
+    ) -> Self::IterState<'w> {
+        std::ptr::null()
+    }
+
+    unsafe fn set_archetype_storage<'w>(
+        _state: &Self::State,
+        iter: &mut Self::IterState<'w>,
+        storage: &'w ArchetypeStorage,
+    ) {
+        *iter = storage
+            .get_column(T::UUID)
+            .map(|x| x.as_ptr().as_ptr::<T>() as *const T)
+            .unwrap_or(std::ptr::null())
+    }
+
+    unsafe fn fetch<'w>(
+        _state: &Self::State,
+        iter: &mut Self::IterState<'w>,
+        index: usize,
+    ) -> Self::Item<'w> {
+        if iter.is_null() {
+            None
+        } else {
+            unsafe { Some(&*iter.add(index)) }
+        }
+    }
+}
+
+unsafe impl<T: Component> ReadOnlyQueryParam for Option<&'_ T> {}
+
+unsafe impl<T: Component> QueryParam for Option<&'_ mut T> {
+    type State = ();
+    type IterState<'w> = *mut T;
+    type Item<'w> = Option<&'w mut T>;
+
+    fn initialize(_app: &mut App, access: &mut QueryAccess) -> Self::State {
+        access.write_component(T::UUID);
+    }
+
+    #[inline]
+    unsafe fn create_iter_state<'w>(
+        _state: &Self::State,
+        _app: AppCell<'w>,
+    ) -> Self::IterState<'w> {
+        std::ptr::null_mut()
+    }
+
+    unsafe fn set_archetype_storage<'w>(
+        _state: &Self::State,
+        iter: &mut Self::IterState<'w>,
+        storage: &'w ArchetypeStorage,
+    ) {
+        *iter = storage
+            .get_column(T::UUID)
+            .map(|x| x.as_ptr().as_ptr::<T>())
+            .unwrap_or(std::ptr::null_mut())
+    }
+
+    unsafe fn fetch<'w>(
+        _state: &Self::State,
+        iter: &mut Self::IterState<'w>,
+        index: usize,
+    ) -> Self::Item<'w> {
+        if iter.is_null() {
+            None
+        } else {
+            unsafe { Some(&mut *iter.add(index)) }
+        }
+    }
+}
+
 macro_rules! tuple_impl {
     ($($name:ident $name2:ident),*) => {
         #[allow(unused_variables, clippy::unused_unit, non_snake_case, unused_unsafe)]
@@ -359,17 +636,13 @@ macro_rules! tuple_impl {
             type Item<'w> = ($($name::Item<'w>,)*);
             type IterState<'w> = ($($name::IterState<'w>,)*);
 
-            fn create_state(app: &mut App) -> Self::State {
-                ($($name::create_state(app),)*)
+            fn initialize(app: &mut App, access: &mut QueryAccess) -> Self::State {
+                ($($name::initialize(app, access),)*)
             }
 
-            fn create_iter_state<'w>(state: &Self::State, app:  AppCell<'w>) -> Self::IterState<'w> {
+            unsafe fn create_iter_state<'w>(state: &Self::State, app:  AppCell<'w>) -> Self::IterState<'w> {
                 let ($($name,)*) = state;
-                ($($name::create_iter_state($name, app),)*)
-            }
-
-            fn register_access(access: &mut SystemAccess) {
-                $(<$name as QueryParam>::register_access(access);)*
+                unsafe { ($($name::create_iter_state($name, app),)*) }
             }
 
             unsafe fn set_archetype_storage<'w>(
@@ -392,6 +665,11 @@ macro_rules! tuple_impl {
                 unsafe { ($(<$name as QueryParam>::fetch($name, $name2, index),)*) }
             }
         }
+
+        unsafe impl<$($name,)*> ReadOnlyQueryParam for ($($name,)*)
+        where
+            $($name: ReadOnlyQueryParam,)*
+        {}
     };
 }
 

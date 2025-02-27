@@ -43,6 +43,15 @@ impl Event for CloseRequested {
 /// An **event** indicating that the window's surface area has been resized.
 pub struct SurfaceResized(pub PhysicalSize<u32>);
 
+impl Deref for SurfaceResized {
+    type Target = PhysicalSize<u32>;
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 unsafe impl TypeUuid for SurfaceResized {
     const UUID: Uuid = Uuid::from_u128(0x571BA0ED4B65F687D11984630AE4A4A5);
 }

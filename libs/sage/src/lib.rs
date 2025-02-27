@@ -10,7 +10,7 @@ pub use sage_winit as window;
 
 pub use {
     glam::*,
-    sage_color::{LinearSrgba, Srgba},
+    sage_color::{LinearSrgba, Srgba, Srgba8},
     sage_core::{
         FIXED_UPDATE_SCHEDULE, RENDER_SCHEDULE, TypeUuid, UPDATE_SCHEDULE, Uuid,
         app::{App, Event, EventContext, FromApp},

@@ -81,7 +81,7 @@ impl Entities {
     /// The caller must not modify a storage in a way that would invalidate existing entity
     /// locations.
     #[inline(always)]
-    pub unsafe fn archetype_storage(&mut self) -> &mut [ArchetypeStorage] {
+    pub unsafe fn archetype_storages_mut(&mut self) -> &mut [ArchetypeStorage] {
         &mut self.archetypes
     }
 

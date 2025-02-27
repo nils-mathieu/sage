@@ -360,7 +360,7 @@ impl Entities {
                 //    last one).
                 // 3. Increase the length of the destination storage by one.
                 // 4. Update the entity's location.
-                let removed = new_storage.swap_remove_unchecked_no_drop(old_location.row);
+                let removed = old_storage.swap_remove_unchecked_no_drop(old_location.row);
                 debug_assert_eq!(removed, entity);
 
                 if old_location.row != old_storage.len() {

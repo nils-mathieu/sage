@@ -1,10 +1,11 @@
 use {
     sage_core::{
         TypeUuid, Uuid,
-        app::{App, Global},
+        app::{App, AppCell, Global},
         entities::{EntityId, EntityIdAllocator},
         system::{SystemAccess, SystemParam},
     },
+    std::ops::{Deref, DerefMut},
     winit::window::WindowAttributes,
 };
 
@@ -31,7 +32,11 @@ impl EventLoopGlobal {
     }
 
     /// Queues a window for creation.
-    pub fn create_window(&mut self, target_entity: EntityId, attributes: WindowAttributes) {
+    ///
+    /// The [`Window`] component will be attached to the entity with the specified ID.
+    ///
+    /// [`Window`]: crate::Window
+    pub fn create_window_on(&mut self, target_entity: EntityId, attributes: WindowAttributes) {
         self.pending_windows.push((target_entity, attributes));
     }
 
@@ -59,14 +64,6 @@ pub struct EventLoopCommands<'w> {
 }
 
 impl EventLoopCommands<'_> {
-    /// Requests the event loop to exit as soon as possible.
-    ///
-    /// In most cases, the event loop will exit at the end of the current schedule execution.
-    #[inline]
-    pub fn exit(&mut self) {
-        self.global.exit();
-    }
-
     /// Creates a new window with the specified attributes.
     ///
     /// # Remarks
@@ -74,8 +71,24 @@ impl EventLoopCommands<'_> {
     /// The window will only be created at the end of the current schedule execution.
     pub fn create_window(&mut self, attributes: WindowAttributes) -> EntityId {
         let id = self.id_allocator.reserve_one();
-        self.global.create_window(id, attributes);
+        self.create_window_on(id, attributes);
         id
+    }
+}
+
+impl Deref for EventLoopCommands<'_> {
+    type Target = EventLoopGlobal;
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        self.global
+    }
+}
+
+impl DerefMut for EventLoopCommands<'_> {
+    #[inline(always)]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.global
     }
 }
 
@@ -87,16 +100,11 @@ unsafe impl SystemParam for EventLoopCommands<'_> {
 
     unsafe fn apply_deferred(_state: &mut Self::State, _app: &mut App) {}
 
-    unsafe fn fetch<'w>(_state: &'w mut Self::State, app: &'w App) -> Self::Item<'w> {
+    unsafe fn fetch<'w>(_state: &'w mut Self::State, app: AppCell<'w>) -> Self::Item<'w> {
         unsafe {
             EventLoopCommands {
-                global: app
-                    .globals()
-                    .get_raw(EventLoopGlobal::UUID)
-                    .expect("`EventLoopGlobal` not present")
-                    .data()
-                    .as_mut(),
-                id_allocator: app.entities().id_allocator(),
+                global: app.global_mut().expect("`EventLoopGlobal` not present"),
+                id_allocator: app.get_ref().entities().id_allocator(),
             }
         }
     }

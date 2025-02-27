@@ -1,8 +1,8 @@
 [package]
-name = "sage-core"
+name = "sage-hierarchy"
 edition = "2024"
 version = "0.0.1"
-description = "The barebones core of the Sage game engine"
+description = "A parent-children hierarchy system for the Sage game engine"
 authors = ["Nils Mathieu <nils@astralforge.art>"]
 license = "MIT"
 repository = "https://github.com/TheAstralForge/sage"
@@ -10,6 +10,4 @@ keywords = ["game", "engine", "sage"]
 categories = []
 
 [dependencies]
-hashbrown = { workspace = true, features = ["raw-entry"] }
-foldhash.workspace = true
-petgraph = { version = "0.7", default-features = false }
+sage-core.workspace = true

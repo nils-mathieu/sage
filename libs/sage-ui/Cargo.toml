@@ -1,0 +1,18 @@
+[package]
+name = "sage-ui"
+edition = "2024"
+version = "0.0.1"
+description = "The UI framework of the Sage game engine"
+authors = ["Nils Mathieu <nils@astralforge.art>"]
+license = "MIT"
+repository = "https://github.com/TheAstralForge/sage"
+keywords = ["game", "engine", "sage", "graphics", "gui"]
+categories = []
+
+[dependencies]
+sage-core.workspace = true
+sage-wgpu.workspace = true
+sage-hierarchy.workspace = true
+sage-color = { workspace = true, features = ["bytemuck"] }
+glam = { workspace = true, features = ["bytemuck"] }
+bytemuck = { workspace = true, features = ["derive"] }

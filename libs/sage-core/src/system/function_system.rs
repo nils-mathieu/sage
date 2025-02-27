@@ -1,12 +1,15 @@
-use crate::{
-    app::App,
-    system::{IntoSystem, System, SystemAccess, SystemParam},
+use {
+    super::SystemInput,
+    crate::{
+        app::{App, AppCell},
+        system::{IntoSystem, System, SystemAccess, SystemParam},
+    },
 };
 
 /// A trait for Rust closure suitable for use as a system.
 pub trait SystemFunction<Marker>: Send + Sync + 'static {
     /// The input of the system.
-    type In<'a>;
+    type In: SystemInput;
 
     /// The output of the system.
     type Out;
@@ -17,7 +20,7 @@ pub trait SystemFunction<Marker>: Send + Sync + 'static {
     /// Runs the system with the given input and parameters.
     fn run(
         &mut self,
-        input: Self::In<'_>,
+        input: <Self::In as SystemInput>::Item<'_>,
         param: <Self::Param as SystemParam>::Item<'_>,
     ) -> Self::Out;
 }
@@ -48,7 +51,7 @@ where
     Marker: 'static,
     F: SystemFunction<Marker>,
 {
-    type In<'a> = F::In<'a>;
+    type In = F::In;
     type Out = F::Out;
 
     #[inline(always)]
@@ -57,7 +60,7 @@ where
     }
 
     #[inline]
-    unsafe fn run(&mut self, input: F::In<'_>, app: &App) -> F::Out {
+    unsafe fn run(&mut self, input: <F::In as SystemInput>::Item<'_>, app: AppCell) -> F::Out {
         let param = unsafe { <F::Param as SystemParam>::fetch(&mut self.param_state, app) };
         self.closure.run(input, param)
     }
@@ -68,7 +71,7 @@ where
     }
 }
 
-impl<F, M> IntoSystem<M> for F
+impl<F, M> IntoSystem<M, F::In, F::Out> for F
 where
     M: 'static,
     F: SystemFunction<M>,
@@ -76,26 +79,32 @@ where
     type System = FunctionSystem<M, Self>;
 
     #[inline]
-    fn into_system(self, app: &mut App) -> Self::System {
-        FunctionSystem::new(app, self)
+    fn into_system(this: Self, app: &mut App) -> Self::System {
+        FunctionSystem::new(app, this)
     }
 }
+
+#[doc(hidden)]
+pub struct SystemFunctionHasSystemInput;
 
 macro_rules! tuple_impl {
     ($($name:ident)*) => {
         #[allow(non_snake_case)]
-        impl<Func, Ret, $($name,)*> SystemFunction<(($($name,)*), Ret)> for Func
+        #[allow(clippy::too_many_arguments)]
+        impl<Func, Ret, $($name,)*> SystemFunction<fn($($name,)*) -> Ret> for Func
         where
-            Func: 'static + Send + Sync + FnMut($(<$name as SystemParam>::Item<'_>,)*) -> Ret,
+            Func: 'static + Send + Sync +
+                FnMut($(<$name as SystemParam>::Item<'_>,)*) -> Ret +
+                FnMut($($name,)*) -> Ret,
             $($name: SystemParam,)*
         {
-            type In<'a> = ();
+            type In = ();
             type Out = Ret;
             type Param = ($($name,)*);
 
             fn run(
                 &mut self,
-                _input: Self::In<'_>,
+                _input: <Self::In as SystemInput>::Item<'_>,
                 param: <Self::Param as SystemParam>::Item<'_>,
             ) -> Self::Out {
                 let ($($name,)*) = param;
@@ -104,18 +113,21 @@ macro_rules! tuple_impl {
         }
 
         #[allow(non_snake_case)]
-        impl<Func, Ret, In, $($name,)*> SystemFunction<(In, ($($name,)*), Ret)> for Func
+        impl<Func, Ret, In, $($name,)*> SystemFunction<(SystemFunctionHasSystemInput, fn(In, $($name,)*) -> Ret)> for Func
         where
-            Func: 'static + Send + Sync + FnMut(In, $(<$name as SystemParam>::Item<'_>,)*) -> Ret,
+            In: SystemInput,
+            Func: 'static + Send + Sync +
+                FnMut(<In as SystemInput>::Item<'_>, $(<$name as SystemParam>::Item<'_>,)*) -> Ret +
+                FnMut(In, $($name,)*) -> Ret,
             $($name: SystemParam,)*
         {
-            type In<'a> = In;
+            type In = In;
             type Out = Ret;
             type Param = ($($name,)*);
 
             fn run(
                 &mut self,
-                input: Self::In<'_>,
+                input: <Self::In as SystemInput>::Item<'_>,
                 param: <Self::Param as SystemParam>::Item<'_>,
             ) -> Self::Out {
                 let ($($name,)*) = param;

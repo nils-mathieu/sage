@@ -1,8 +1,8 @@
 [package]
-name = "sage"
+name = "sage-wgpu"
 edition = "2024"
 version = "0.0.1"
-description = "Sage: A Game Engine"
+description = "A wgpu-based rendering backend for the Sage game engine"
 authors = ["Nils Mathieu <nils@astralforge.art>"]
 license = "MIT"
 repository = "https://github.com/TheAstralForge/sage"
@@ -11,10 +11,5 @@ categories = []
 
 [dependencies]
 sage-core.workspace = true
-sage-winit.workspace = true
-sage-wgpu.workspace = true
-sage-color.workspace = true
-sage-hierarchy.workspace = true
-sage-ui.workspace = true
 
-glam.workspace = true
+wgpu = "24"

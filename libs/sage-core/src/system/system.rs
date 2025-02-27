@@ -1,5 +1,8 @@
 use {
-    crate::{OpaquePtr, app::App},
+    crate::{
+        OpaquePtr,
+        app::{App, AppCell},
+    },
     std::{marker::PhantomData, mem::MaybeUninit},
 };
 
@@ -8,7 +11,7 @@ use {
 pub struct RawSystemVTable {
     debug_name: &'static str,
     drop_fn: unsafe extern "C" fn(data: OpaquePtr),
-    run_fn: unsafe extern "C" fn(data: OpaquePtr, i: OpaquePtr, o: OpaquePtr, app: &App),
+    run_fn: unsafe extern "C" fn(data: OpaquePtr, i: OpaquePtr, o: OpaquePtr, app: AppCell),
     apply_deferred_fn: unsafe extern "C" fn(data: OpaquePtr, app: &mut App),
 }
 
@@ -24,7 +27,7 @@ impl<I, O> RawSystem<I, O> {
     /// Creates a new [`RawSystem`] from a [`System`] implementation.
     pub fn new<S>(system: S) -> Self
     where
-        S: for<'a> System<In<'a> = I, Out = O>,
+        S: for<'a> System<In = I, Out = O>,
     {
         unsafe extern "C" fn drop_fn<S>(data: OpaquePtr)
         where
@@ -37,15 +40,15 @@ impl<I, O> RawSystem<I, O> {
             data: OpaquePtr,
             input: OpaquePtr,
             output: OpaquePtr,
-            app: &App,
+            app: AppCell,
         ) where
             S: System,
         {
             unsafe {
-                output.as_ptr::<S::Out>().write(
-                    data.as_mut::<S>()
-                        .run(input.as_ptr::<S::In<'_>>().read(), app),
-                )
+                output.as_ptr::<S::Out>().write(data.as_mut::<S>().run(
+                    input.as_ptr::<<S::In as SystemInput>::Item<'_>>().read(),
+                    app,
+                ))
             }
         }
 
@@ -76,12 +79,18 @@ impl<I, O> RawSystem<I, O> {
         }
     }
 
+    /// Returns the debug name of the system.
+    #[inline]
+    pub fn debug_name(&self) -> &'static str {
+        self.vtable.debug_name
+    }
+
     /// Runs the system with the given input and output arguments.
     ///
     /// # Safety
     ///
     /// See [`System::run`] for safety requirements.
-    pub unsafe fn run(&mut self, input: I, app: &App) -> O {
+    pub unsafe fn run(&mut self, input: I, app: AppCell) -> O {
         unsafe {
             let mut input = MaybeUninit::new(input);
             let mut output = MaybeUninit::uninit();
@@ -112,6 +121,16 @@ impl<I, O> RawSystem<I, O> {
 #[derive(Default)]
 pub struct SystemAccess {}
 
+/// A trait for system input types.
+pub trait SystemInput {
+    /// The associated item type, with an optional lifetime.
+    type Item<'a>;
+}
+
+impl SystemInput for () {
+    type Item<'a> = ();
+}
+
 /// A system that runs and affects the application state.
 ///
 /// # Safety
@@ -130,7 +149,7 @@ pub unsafe trait System: 'static + Send + Sync {
     /// The input of the system.
     ///
     /// This may be arbitrary data which will be passed to the system when it is executed.
-    type In<'a>;
+    type In: SystemInput;
 
     /// The output of the system.
     ///
@@ -148,7 +167,8 @@ pub unsafe trait System: 'static + Send + Sync {
     /// during the system's execution.
     ///
     /// The system must be associated with the given [`App`] instance.
-    unsafe fn run(&mut self, input: Self::In<'_>, app: &App) -> Self::Out;
+    unsafe fn run(&mut self, input: <Self::In as SystemInput>::Item<'_>, app: AppCell)
+    -> Self::Out;
 
     /// Applies any deferred changes to the application.
     ///
@@ -159,14 +179,14 @@ pub unsafe trait System: 'static + Send + Sync {
 }
 
 /// A trait for Rust types that can be turned into a [`System`] implementation.
-pub trait IntoSystem<M> {
+pub trait IntoSystem<M, In = (), Out = ()> {
     /// The output system of this conversion.
-    type System: System;
+    type System: System<In = In, Out = Out>;
 
     /// Converts this type into its associated [`System`] implementation.
     ///
     /// # Notes
     ///
     /// The returned system is associated with the provided [`App`].
-    fn into_system(self, app: &mut App) -> Self::System;
+    fn into_system(this: Self, app: &mut App) -> Self::System;
 }

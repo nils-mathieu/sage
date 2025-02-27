@@ -191,7 +191,7 @@ impl<M> EntityIdAllocator<M> {
     /// Returns whether the allocator needs to be flushed.
     #[inline]
     pub fn needs_flush(&mut self) -> bool {
-        *self.reserved.get_mut() as usize == self.free_list.len()
+        *self.reserved.get_mut() as usize != self.free_list.len()
     }
 
     /// Reserves a single entity ID.

@@ -1,7 +1,10 @@
-use crate::{
-    app::{App, Global, missing_global},
-    entities::EntityIdAllocator,
-    system::SystemAccess,
+use {
+    crate::{
+        app::{App, AppCell, Global, missing_global},
+        entities::EntityIdAllocator,
+        system::SystemAccess,
+    },
+    std::ops::{Deref, DerefMut},
 };
 
 /// A trait for system parameters.
@@ -59,7 +62,7 @@ pub unsafe trait SystemParam {
     /// 2. The provided state has been previously initialized with [`initialize`].
     ///
     /// [`initialize`]: SystemParam::initialize
-    unsafe fn fetch<'w>(state: &'w mut Self::State, app: &'w App) -> Self::Item<'w>;
+    unsafe fn fetch<'w>(state: &'w mut Self::State, app: AppCell<'w>) -> Self::Item<'w>;
 }
 
 macro_rules! tuple_impl {
@@ -76,7 +79,7 @@ macro_rules! tuple_impl {
                 ($($name::initialize(app, access),)*)
             }
 
-            unsafe fn fetch<'w>(state: &'w mut Self::State, app: &'w App) -> Self::Item<'w> {
+            unsafe fn fetch<'w>(state: &'w mut Self::State, app: AppCell<'w>) -> Self::Item<'w> {
                 let ($($name,)*) = state;
                 unsafe { ($($name::fetch($name, app),)*) }
             }
@@ -99,6 +102,20 @@ tuple_impl!(A B C D E F);
 tuple_impl!(A B C D E F G);
 tuple_impl!(A B C D E F G H);
 
+unsafe impl SystemParam for &'_ App {
+    type State = ();
+    type Item<'w> = &'w App;
+
+    fn initialize(_app: &mut App, _access: &mut SystemAccess) -> Self::State {}
+
+    #[inline]
+    unsafe fn fetch<'w>(_state: &'w mut Self::State, app: AppCell<'w>) -> Self::Item<'w> {
+        unsafe { app.get_ref() }
+    }
+
+    unsafe fn apply_deferred(_state: &mut Self::State, _app: &mut App) {}
+}
+
 unsafe impl SystemParam for &'_ EntityIdAllocator {
     type State = ();
     type Item<'w> = &'w EntityIdAllocator;
@@ -108,8 +125,8 @@ unsafe impl SystemParam for &'_ EntityIdAllocator {
     unsafe fn apply_deferred(_state: &mut Self::State, _app: &mut App) {}
 
     #[inline]
-    unsafe fn fetch<'w>(_state: &'w mut Self::State, app: &'w App) -> Self::Item<'w> {
-        app.entities().id_allocator()
+    unsafe fn fetch<'w>(_state: &'w mut Self::State, app: AppCell<'w>) -> Self::Item<'w> {
+        unsafe { app.get_ref().entities().id_allocator() }
     }
 }
 
@@ -119,37 +136,65 @@ unsafe impl SystemParam for &'_ EntityIdAllocator {
 /// mutably or immutably.
 pub struct Glob<T>(pub T);
 
+impl<T> Deref for Glob<&'_ T> {
+    type Target = T;
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        self.0
+    }
+}
+
+impl<T> Deref for Glob<&'_ mut T> {
+    type Target = T;
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        self.0
+    }
+}
+
+impl<T> DerefMut for Glob<&'_ mut T> {
+    #[inline(always)]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.0
+    }
+}
+
 unsafe impl<G: Global> SystemParam for Glob<&'_ G> {
     type State = ();
-    type Item<'w> = &'w G;
+    type Item<'w> = Glob<&'w G>;
 
     fn initialize(_app: &mut App, _access: &mut SystemAccess) -> Self::State {}
 
     unsafe fn apply_deferred(_state: &mut Self::State, _app: &mut App) {}
 
     #[inline]
-    unsafe fn fetch<'w>(_state: &'w mut Self::State, app: &'w App) -> Self::Item<'w> {
-        app.global()
+    unsafe fn fetch<'w>(_state: &'w mut Self::State, app: AppCell<'w>) -> Self::Item<'w> {
+        let ret = unsafe {
+            app.global()
+                .unwrap_or_else(|| missing_global(G::DEBUG_NAME))
+        };
+
+        Glob(ret)
     }
 }
 
 unsafe impl<G: Global> SystemParam for Glob<&'_ mut G> {
     type State = ();
-    type Item<'w> = &'w mut G;
+    type Item<'w> = Glob<&'w mut G>;
 
     fn initialize(_app: &mut App, _access: &mut SystemAccess) -> Self::State {}
 
     unsafe fn apply_deferred(_state: &mut Self::State, _app: &mut App) {}
 
     #[inline]
-    unsafe fn fetch<'w>(_state: &'w mut Self::State, app: &'w App) -> Self::Item<'w> {
-        let p = app
-            .globals()
-            .get_raw(G::UUID)
-            .unwrap_or_else(|| missing_global(G::DEBUG_NAME))
-            .data();
+    unsafe fn fetch<'w>(_state: &'w mut Self::State, app: AppCell<'w>) -> Self::Item<'w> {
+        let ret = unsafe {
+            app.global_mut()
+                .unwrap_or_else(|| missing_global(G::DEBUG_NAME))
+        };
 
-        // SAFETY: The caller must ensure that access to the global is safe.
-        unsafe { p.as_mut() }
+        Glob(ret)
     }
 }

@@ -9,6 +9,10 @@ resolver = "3"
 #
 sage-core = { path = "libs/sage-core" }
 sage-winit = { path = "libs/sage-winit" }
+sage-wgpu = { path = "libs/sage-wgpu" }
+sage-ui = { path = "libs/sage-ui" }
+sage-hierarchy = { path = "libs/sage-hierarchy" }
+sage-color = { path = "libs/sage-color" }
 sage = { path = "libs/sage" }
 
 #
@@ -16,3 +20,5 @@ sage = { path = "libs/sage" }
 #
 hashbrown = { version = "0.15", default-features = false }
 foldhash = { version = "0.1", default-features = false }
+glam = { version = "0.30", default-features = false, features = ["std"] }
+bytemuck = { version = "1", default-features = false }

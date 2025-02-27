@@ -3,7 +3,8 @@ use {
         OpaquePtr, Uuid,
         app::{Event, EventContext, EventHandlers, FromApp, Global, Globals, RawEventContext},
         entities::{ComponentList, Entities, EntityId, EntityMut, EntityRef},
-        system::{IntoSystem, Schedule, System},
+        schedule::{Schedule, SystemConfig},
+        system::IntoSystem,
     },
     std::mem::ManuallyDrop,
 };
@@ -27,6 +28,11 @@ pub struct App {
 }
 
 impl App {
+    /// Flushes pending states in the application.
+    pub fn flush(&mut self) {
+        self.entities.flush();
+    }
+
     // ========================================================================================== //
     // GLOBALS                                                                                    //
     // ========================================================================================== //
@@ -55,6 +61,13 @@ impl App {
     #[track_caller]
     pub fn register_global<G: Global>(&mut self, global: G) {
         self.globals.register(Box::new(global))
+    }
+
+    /// Registers a global resource with the application if it is not already registered.
+    ///
+    /// If the global has already been registered, this function will do nothing.
+    pub fn register_global_with<G: Global>(&mut self, f: impl FnOnce() -> G) {
+        self.globals.register_with(|| Box::new(f()))
     }
 
     /// Initializes a global resource with the application.
@@ -250,11 +263,10 @@ impl App {
     pub fn add_event_handler<E, S, M>(&mut self, handler: S)
     where
         E: Event,
-        S: IntoSystem<M>,
-        S::System: for<'a> System<In<'a> = EventContext<'a, E>, Out = ()>,
+        S: IntoSystem<M, EventContext<'static, E>>,
     {
         unsafe {
-            let handler = handler.into_system(self);
+            let handler = IntoSystem::into_system(handler, self);
             self.event_handlers.insert_global(handler);
         }
     }
@@ -264,11 +276,10 @@ impl App {
     pub fn add_scoped_event_handler<E, S, M>(&mut self, entity: EntityId, handler: S)
     where
         E: Event,
-        S: IntoSystem<M>,
-        S::System: for<'a> System<In<'a> = EventContext<'a, E>, Out = ()>,
+        S: IntoSystem<M, EventContext<'static, E>>,
     {
         unsafe {
-            let handler = handler.into_system(self);
+            let handler = IntoSystem::into_system(handler, self);
             self.event_handlers.insert_scoped(entity, handler);
         }
     }
@@ -346,14 +357,13 @@ impl App {
 
     /// Adds a system to the provided schedule.
     #[track_caller]
-    pub fn add_system<S, M>(&mut self, schedule: Uuid, system: S)
+    pub fn add_system<S, M>(&mut self, schedule: Uuid, config: SystemConfig, system: S)
     where
         S: IntoSystem<M>,
-        S::System: for<'a> System<In<'a> = (), Out = ()>,
     {
         unsafe {
             self.with_schedule(schedule, |app, schedule| {
-                schedule.add_system(system.into_system(app))
+                schedule.add_system(config, IntoSystem::into_system(system, app))
             });
         }
     }
@@ -363,9 +373,7 @@ impl App {
     /// If the schedule does not exist, this function does nothing.
     #[track_caller]
     pub fn run_schedule(&mut self, schedule: Uuid) {
-        unsafe {
-            self.with_schedule(schedule, |app, schedule| schedule.run(&(), app));
-        }
+        unsafe { self.with_schedule(schedule, |app, schedule| schedule.run(&(), app)) };
     }
 }
 

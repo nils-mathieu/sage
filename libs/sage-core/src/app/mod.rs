@@ -13,3 +13,6 @@ pub use self::event::*;
 
 mod commands;
 pub use self::commands::*;
+
+mod app_cell;
+pub use self::app_cell::*;

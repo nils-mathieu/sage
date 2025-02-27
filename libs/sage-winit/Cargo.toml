@@ -11,7 +11,9 @@ categories = []
 
 [dependencies]
 sage-core.workspace = true
+sage-wgpu.workspace = true
 
 winit = "0.30"
+pollster = "0.4"
 hashbrown.workspace = true
 foldhash.workspace = true

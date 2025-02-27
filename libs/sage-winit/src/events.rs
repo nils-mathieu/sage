@@ -2,6 +2,7 @@
 
 use {
     sage_core::{TypeUuid, Uuid, app::Event},
+    std::ops::{Deref, DerefMut},
     winit::{
         dpi::{PhysicalPosition, PhysicalSize},
         event::{DeviceId, InnerSizeWriter},
@@ -142,6 +143,22 @@ pub struct KeyboardInput {
 
     /// Whether the event was synthesized by `winit` to ensure platform compatibility.
     pub is_synthetic: bool,
+}
+
+impl Deref for KeyboardInput {
+    type Target = winit::event::KeyEvent;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl DerefMut for KeyboardInput {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
 }
 
 unsafe impl TypeUuid for KeyboardInput {

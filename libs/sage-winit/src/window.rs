@@ -1,5 +1,4 @@
 use {
-    crate::WinitWindow,
     sage_core::{TypeUuid, Uuid, entities::Component},
     std::sync::Arc,
     winit::dpi::{PhysicalPosition, PhysicalSize},
@@ -7,7 +6,7 @@ use {
 
 /// A window that the user can interact with.
 pub struct Window {
-    pub(crate) winit_window: Arc<WinitWindow>,
+    pub(crate) winit_window: Arc<winit::window::Window>,
     pub(crate) surface_size: PhysicalSize<u32>,
     pub(crate) scale_factor: f64,
     pub(crate) pointer_position: Option<PhysicalPosition<f64>>,
@@ -16,7 +15,7 @@ pub struct Window {
 
 impl Window {
     /// Creates a new [`Window`] from a [`winit`] window object.
-    pub(crate) fn new(winit_window: Arc<WinitWindow>) -> Self {
+    pub(crate) fn new(winit_window: Arc<winit::window::Window>) -> Self {
         let scale_factor = winit_window.scale_factor();
         let surface_size = winit_window.inner_size();
 
@@ -37,7 +36,7 @@ impl Window {
     /// Note that a lot of the window's state is cached in the [`Window`] struct already, so it's
     /// usually faster to simply use the methods provided here.
     #[inline(always)]
-    pub fn winit_window(&self) -> &WinitWindow {
+    pub fn winit_window(&self) -> &winit::window::Window {
         &self.winit_window
     }
 
@@ -65,6 +64,12 @@ impl Window {
     #[inline(always)]
     pub fn focused(&self) -> bool {
         self.focused
+    }
+
+    /// Requests the window to be redrawn.
+    #[inline]
+    pub fn request_redraw(&self) {
+        self.winit_window.request_redraw();
     }
 }
 

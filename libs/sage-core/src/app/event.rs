@@ -1,9 +1,10 @@
 use {
     crate::{
         OpaquePtr, TypeUuid, Uuid,
-        app::App,
+        app::{App, AppCell},
         entities::EntityId,
-        system::{RawSystem, Schedule, System, SystemAccess},
+        schedule::{Schedule, SystemConfig},
+        system::{RawSystem, System, SystemAccess, SystemInput},
     },
     std::{
         marker::PhantomData,
@@ -67,6 +68,10 @@ pub struct RawEventContext {
 unsafe impl Send for RawEventContext {}
 unsafe impl Sync for RawEventContext {}
 
+impl SystemInput for RawEventContext {
+    type Item<'a> = RawEventContext;
+}
+
 /// An event context that is passed to event handlers.
 #[repr(transparent)]
 pub struct EventContext<'a, E> {
@@ -119,6 +124,10 @@ impl<E> EventContext<'_, E> {
     }
 }
 
+impl<E: Event> SystemInput for EventContext<'_, E> {
+    type Item<'a> = EventContext<'a, E>;
+}
+
 impl<E: Event> Deref for EventContext<'_, E> {
     type Target = E;
 
@@ -168,7 +177,7 @@ impl EventHandlers {
         handler: RawSystem<RawEventContext>,
     ) {
         let schedule = self.scoped.entry((entity, event)).or_default();
-        unsafe { schedule.add_system_raw(handler) }
+        unsafe { schedule.add_system_raw(SystemConfig::default(), handler) }
     }
 
     /// Inserts an event handler into the collection.
@@ -179,7 +188,7 @@ impl EventHandlers {
     /// as all the other systems.
     pub unsafe fn insert_scoped<S, E: Event>(&mut self, entity: EntityId, handler: S)
     where
-        S: for<'a> System<In<'a> = EventContext<'a, E>, Out = ()>,
+        S: System<In = EventContext<'static, E>, Out = ()>,
     {
         unsafe { self.insert_scoped_raw(entity, E::UUID, convert_handler(handler)) }
     }
@@ -202,7 +211,7 @@ impl EventHandlers {
             self.global
                 .entry(event)
                 .or_default()
-                .add_system_raw(handler)
+                .add_system_raw(SystemConfig::default(), handler)
         }
     }
 
@@ -215,7 +224,7 @@ impl EventHandlers {
     /// as all the other systems.
     pub unsafe fn insert_global<S, E: Event>(&mut self, handler: S)
     where
-        S: for<'a> System<In<'a> = EventContext<'a, E>, Out = ()>,
+        S: for<'a> System<In = EventContext<'static, E>, Out = ()>,
     {
         unsafe { self.insert_global_raw(E::UUID, convert_handler(handler)) }
     }
@@ -256,16 +265,16 @@ impl EventHandlers {
 fn convert_handler<S, E>(handler: S) -> RawSystem<RawEventContext>
 where
     E: Event,
-    S: for<'a> System<In<'a> = EventContext<'a, E>, Out = ()>,
+    S: System<In = EventContext<'static, E>, Out = ()>,
 {
     struct Wrapper<S>(S);
 
     unsafe impl<E, S> System for Wrapper<S>
     where
         E: Event,
-        S: for<'a> System<In<'a> = EventContext<'a, E>, Out = ()>,
+        S: for<'a> System<In = EventContext<'static, E>, Out = ()>,
     {
-        type In<'a> = RawEventContext;
+        type In = RawEventContext;
         type Out = ();
 
         #[inline(always)]
@@ -274,7 +283,7 @@ where
         }
 
         #[inline(always)]
-        unsafe fn run(&mut self, input: RawEventContext, app: &App) {
+        unsafe fn run(&mut self, input: RawEventContext, app: AppCell) {
             unsafe { self.0.run(EventContext::from_raw(input), app) }
         }
 

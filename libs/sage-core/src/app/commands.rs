@@ -1,5 +1,5 @@
 use {
-    super::Event,
+    super::{AppCell, Event},
     crate::{
         app::App,
         entities::{ComponentList, EntityId, EntityIdAllocator},
@@ -348,9 +348,9 @@ unsafe impl SystemParam for Commands<'_> {
     }
 
     #[inline]
-    unsafe fn fetch<'w>(state: &'w mut Self::State, app: &'w App) -> Self::Item<'w> {
+    unsafe fn fetch<'w>(state: &'w mut Self::State, app: AppCell<'w>) -> Self::Item<'w> {
         Commands {
-            id_allocator: app.entities().id_allocator(),
+            id_allocator: unsafe { app.get_ref().entities().id_allocator() },
             list: state.get_mut(),
         }
     }

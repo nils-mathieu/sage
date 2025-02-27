@@ -1,0 +1,13 @@
+[package]
+name = "sage-color"
+edition = "2024"
+version = "0.0.1"
+description = "The color type used by the Sage game engine"
+authors = ["Nils Mathieu <nils@astralforge.art>"]
+license = "MIT"
+repository = "https://github.com/TheAstralForge/sage"
+keywords = ["game", "engine", "sage", "color"]
+categories = []
+
+[dependencies]
+bytemuck = { workspace = true, optional = true, features = ["derive"] }

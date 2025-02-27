@@ -1,5 +1,5 @@
 use crate::{
-    app::App,
+    app::{App, AppCell},
     entities::{
         ArchetypeId, ArchetypeStorage, Component, EntityId, EntityIdAllocator, EntityIndex,
         EntityLocation,
@@ -58,7 +58,7 @@ impl<P: QueryParam> QueryState<P> {
     /// - The caller must ensure that the provided application state is the same one as the one
     ///   used to create the [`QueryState<P>`] instance.
     #[inline]
-    pub unsafe fn make_query_unchecked<'w>(&'w self, app: &'w App) -> Query<'w, P> {
+    pub unsafe fn make_query_unchecked<'w>(&'w self, app: AppCell<'w>) -> Query<'w, P> {
         Query { app, state: self }
     }
 }
@@ -69,18 +69,18 @@ pub struct Query<'w, P: QueryParam> {
     /// All archetypes in the state.
     ///
     /// All requested resources must be available.
-    app: &'w App,
+    app: AppCell<'w>,
     /// The state of the query.
     state: &'w QueryState<P>,
 }
 
 impl<'w, P: QueryParam> Query<'w, P> {
     /// Creates a new iterator that returns the entities that match the query's filter.
-    pub fn iter(&mut self, archetypes: &'w [ArchetypeStorage]) -> QueryIter<'w, P> {
+    pub fn iter(&mut self) -> QueryIter<'w, P> {
         QueryIter {
             state: self.state,
             iter_state: P::create_iter_state(&self.state.param_state, self.app),
-            archetypes,
+            archetypes: unsafe { self.app.get_ref().entities().archetype_storages() },
             archetype_ids: self.state.matched_archetypes.iter(),
             range: 0..0,
         }
@@ -105,7 +105,7 @@ where
     unsafe fn apply_deferred(_state: &mut Self::State, _app: &mut App) {}
 
     #[inline]
-    unsafe fn fetch<'w>(state: &'w mut Self::State, app: &'w App) -> Self::Item<'w> {
+    unsafe fn fetch<'w>(state: &'w mut Self::State, app: AppCell<'w>) -> Self::Item<'w> {
         unsafe { state.make_query_unchecked(app) }
     }
 }
@@ -190,7 +190,7 @@ pub unsafe trait QueryParam {
     fn create_state(app: &mut App) -> Self::State;
 
     /// Creates a new iterator state.
-    fn create_iter_state<'w>(state: &Self::State, app: &'w App) -> Self::IterState<'w>;
+    fn create_iter_state<'w>(state: &Self::State, app: AppCell<'w>) -> Self::IterState<'w>;
 
     /// Updates the provided iterator state for a new archetype storage.
     ///
@@ -237,28 +237,6 @@ pub unsafe trait QueryParam {
     ) -> Self::Item<'w>;
 }
 
-unsafe impl QueryParam for () {
-    type State = ();
-    type Item<'w> = ();
-    type IterState<'w> = ();
-
-    fn create_state(_app: &mut App) -> Self::State {}
-    fn create_iter_state(_state: &Self::State, _app: &App) {}
-    unsafe fn set_archetype_storage(
-        _state: &Self::State,
-        _iter: &mut Self::IterState<'_>,
-        _storage: &ArchetypeStorage,
-    ) {
-    }
-    unsafe fn fetch<'w>(
-        _state: &Self::State,
-        _iter: &mut Self::IterState<'w>,
-        _index: usize,
-    ) -> Self::Item<'w> {
-    }
-    fn register_access(_access: &mut SystemAccess) {}
-}
-
 unsafe impl QueryParam for EntityId {
     type State = ();
     type Item<'w> = EntityId;
@@ -266,8 +244,9 @@ unsafe impl QueryParam for EntityId {
 
     fn create_state(_app: &mut App) -> Self::State {}
 
-    fn create_iter_state<'w>(_state: &Self::State, app: &'w App) -> Self::IterState<'w> {
-        (std::ptr::null(), app.entities().id_allocator())
+    fn create_iter_state<'w>(_state: &Self::State, app: AppCell<'w>) -> Self::IterState<'w> {
+        let id_allocator = unsafe { app.get_ref().entities().id_allocator() };
+        (std::ptr::null(), id_allocator)
     }
 
     fn register_access(_access: &mut SystemAccess) {}
@@ -301,7 +280,7 @@ unsafe impl<T: Component> QueryParam for &'_ T {
     fn create_state(_app: &mut App) -> Self::State {}
 
     #[inline]
-    fn create_iter_state<'w>(_state: &Self::State, _app: &'w App) -> Self::IterState<'w> {
+    fn create_iter_state<'w>(_state: &Self::State, _app: AppCell<'w>) -> Self::IterState<'w> {
         std::ptr::null()
     }
 
@@ -339,7 +318,7 @@ unsafe impl<T: Component> QueryParam for &'_ mut T {
     fn create_state(_app: &mut App) -> Self::State {}
 
     #[inline]
-    fn create_iter_state<'w>(_state: &Self::State, _app: &'w App) -> Self::IterState<'w> {
+    fn create_iter_state<'w>(_state: &Self::State, _app: AppCell<'w>) -> Self::IterState<'w> {
         std::ptr::null_mut()
     }
 
@@ -368,3 +347,60 @@ unsafe impl<T: Component> QueryParam for &'_ mut T {
         unsafe { &mut *iter.add(index) }
     }
 }
+
+macro_rules! tuple_impl {
+    ($($name:ident $name2:ident),*) => {
+        #[allow(unused_variables, clippy::unused_unit, non_snake_case, unused_unsafe)]
+        unsafe impl<$($name,)*> QueryParam for ($($name,)*)
+        where
+            $($name: QueryParam,)*
+        {
+            type State = ($($name::State,)*);
+            type Item<'w> = ($($name::Item<'w>,)*);
+            type IterState<'w> = ($($name::IterState<'w>,)*);
+
+            fn create_state(app: &mut App) -> Self::State {
+                ($($name::create_state(app),)*)
+            }
+
+            fn create_iter_state<'w>(state: &Self::State, app:  AppCell<'w>) -> Self::IterState<'w> {
+                let ($($name,)*) = state;
+                ($($name::create_iter_state($name, app),)*)
+            }
+
+            fn register_access(access: &mut SystemAccess) {
+                $(<$name as QueryParam>::register_access(access);)*
+            }
+
+            unsafe fn set_archetype_storage<'w>(
+                state: &Self::State,
+                iter: &mut Self::IterState<'w>,
+                storage: &'w ArchetypeStorage,
+            ) {
+                let ($($name,)*) = state;
+                let ($($name2,)*) = iter;
+                unsafe { $(<$name as QueryParam>::set_archetype_storage($name, $name2, storage);)* }
+            }
+
+            unsafe fn fetch<'w>(
+                state: &Self::State,
+                iter: &mut Self::IterState<'w>,
+                index: usize,
+            ) -> Self::Item<'w> {
+                let ($($name,)*) = state;
+                let ($($name2,)*) = iter;
+                unsafe { ($(<$name as QueryParam>::fetch($name, $name2, index),)*) }
+            }
+        }
+    };
+}
+
+tuple_impl!();
+tuple_impl!(A a);
+tuple_impl!(A a, B b);
+tuple_impl!(A a, B b, C c);
+tuple_impl!(A a, B b, C c, D d);
+tuple_impl!(A a, B b, C c, D d, E e);
+tuple_impl!(A a, B b, C c, D d, E e, F f);
+tuple_impl!(A a, B b, C c, D d, E e, F f, G g);
+tuple_impl!(A a, B b, C c, D d, E e, F f, G g, H h);

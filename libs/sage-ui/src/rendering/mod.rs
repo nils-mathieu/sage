@@ -1,7 +1,7 @@
 //! UI rendering module.
 
-mod ui_rect;
-pub use self::ui_rect::*;
+mod rect;
+pub use self::rect::*;
 
 mod view;
 pub use self::view::*;
@@ -22,10 +22,11 @@ use {
         wgpu::{self, util::DeviceExt},
     },
     sage_winit::{Window, events::SurfaceResized},
-    std::num::NonZero,
+    std::{num::NonZero, ops::Range},
 };
 
 /// An error that might occur when rasterizing a glyph.
+#[derive(Debug, Clone, Copy)]
 pub enum GlyphError {
     /// The requested font is missing from the font context.
     MissingFont,
@@ -33,6 +34,26 @@ pub enum GlyphError {
     MissingGlyph,
     /// The atlas responsible for holding the glyphs is full.
     AtlasFull,
+}
+
+/// The kind of an UI command.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum UiCommandKind {
+    /// A collection of glyphs.
+    Glyphs,
+    /// A collection of rectangles.
+    Rects,
+}
+
+/// A potentially batched rendering command.
+#[derive(Debug, Clone)]
+struct UiCommand {
+    /// The Z-index of the command.
+    pub z_index: i32,
+    /// The range of items to batch.
+    pub range: Range<u32>,
+    /// The kind of the command.
+    pub kind: UiCommandKind,
 }
 
 /// The pass that is responsible for rendering UI elements.
@@ -49,7 +70,7 @@ pub struct UiPass {
     /// The bind group that references the `view_buf`.
     view_bind_group: wgpu::BindGroup,
     /// The rectangles that need to be rendered.
-    rects: Vec<UiRectInstance>,
+    rects: Vec<RectInstance>,
     /// The buffer that contains the `UiRectInstance`s to be used on the GPU.
     ///
     /// This is only initialized when there are rectangles to draw.
@@ -68,38 +89,118 @@ pub struct UiPass {
     swash_scale_context: swash::scale::ScaleContext,
     /// The atlas that contains the rasterized images that will be available to the GPU.
     text_atlas: TextAtlas,
+    /// The commands that need to be executed.
+    ui_commands: Vec<UiCommand>,
 }
 
 impl UiPass {
-    /// Appends a rectangle to the list of rectangles to be rendered.
+    /// Adds a rectangle to the list of rectangles.
     ///
     /// # Remarks
     ///
-    /// This function does not check whether the inserted rectangle is in bounds of the
-    /// screen or not. It is up to the caller to cull unnecessary rectangles.
+    /// This function won't add a rendering command to actually draw the rectangle. The caller must
+    /// call [`submit_rects`](UiPass::submit_rects) to actually draw the rectangles.
     #[inline]
-    pub fn append_rect(&mut self, rect: UiRectInstance) {
+    pub fn add_rect_no_draw(&mut self, rect: RectInstance) {
         self.rects.push(rect);
+    }
+
+    /// Adds a rectangle to the list of rectangles to be rendered.
+    ///
+    /// # Remarks
+    ///
+    /// This function won't add a rendering command to actually draw the rectangle. The caller must
+    /// call [`submit_rects`](UiPass::submit_rects) to actually draw the rectangles.
+    #[inline]
+    pub fn add_rects_no_draw(&mut self, rects: &[RectInstance]) {
+        self.rects.extend_from_slice(rects);
+    }
+
+    /// Attempts to batch the last command for which `is_same_kind` returns `true` with the
+    /// provided new end index.
+    fn submit_batch(&mut self, end_index: u32, z_index: i32, kind: UiCommandKind) {
+        if let Some(cmd) = self.ui_commands.iter_mut().find(|x| kind == x.kind) {
+            if cmd.z_index == z_index {
+                // We can batch the rectangles. They are on the same z-index.
+                cmd.range.end = end_index;
+            } else {
+                // We can't batch the rectangles. They are on different z-indices.
+                let start = cmd.range.start;
+                let end = end_index;
+
+                if start == end {
+                    return;
+                }
+
+                self.ui_commands.push(UiCommand {
+                    z_index,
+                    range: start..end,
+                    kind,
+                });
+            }
+        } else {
+            // This is the first command.
+            let start = 0;
+            let end = end_index;
+
+            if start == end {
+                return;
+            }
+
+            self.ui_commands.push(UiCommand {
+                z_index,
+                range: start..end,
+                kind,
+            });
+        }
+    }
+
+    /// Submits the rectangles to be rendered.
+    ///
+    /// This shoulld be called after rectangles like [`add_rect_no_draw`](UiPass::add_rect_no_draw)
+    /// or [`add_rects_no_draw`](UiPass::add_rects_no_draw) have been called.
+    pub fn submit_rects(&mut self, z_index: i32) {
+        self.submit_batch(self.rects.len() as u32, z_index, UiCommandKind::Rects);
     }
 
     /// Appends a single glyph to the list of glyphs to be rendered.
     ///
     /// # Remarks
     ///
-    /// This function does not update the intenral glyph cache, meaning that this will do nothing,
-    /// or will render invalid data if the glyph cache is not properly updated to include the
-    /// glyph.
-    ///
-    /// Additionally, this function does not check whether the inserted glyph is in bounds of the
-    /// screen or not. It is up to the caller to cull unnecessary glyphs.
+    /// This function does not add a rendering command to actually draw the glyphs. The caller must
+    /// call [`submit_glyphs`](UiPass::submit_glyphs) to actually draw the glyphs.
     #[inline]
-    pub fn append_glyph_instance(&mut self, glyph: GlyphInstance) {
+    pub fn add_glyph_instance_no_draw(&mut self, glyph: GlyphInstance) {
         self.glyphs.push(glyph);
     }
 
+    /// Appends a collection of glyphs to the list of glyphs to be rendered.
+    ///
+    /// # Remarks
+    ///
+    /// This function does not add a rendering command to actually draw the glyphs. The caller must
+    /// call [`submit_glyphs`](UiPass::submit_glyphs) to actually draw the glyphs.
+    #[inline]
+    pub fn add_glyphs_instance_no_draw(&mut self, glyphs: &[GlyphInstance]) {
+        self.glyphs.extend_from_slice(glyphs);
+    }
+
+    /// Adds a rendering command for the last batch of glyphs.
+    pub fn submit_glyphs(&mut self, z_index: i32) {
+        self.submit_batch(self.glyphs.len() as u32, z_index, UiCommandKind::Glyphs);
+    }
+
     /// Appends a laid-out glyph to the list of glyphs to be rendered.
+    ///
+    /// # Remarks
+    ///
+    /// This function will rasterize the glyph and add it to the internal glyph cache if it is not
+    /// already present. If the glyph is already present in the cache, it will be reused.
+    ///
+    /// However, the function won't add a rendering command to actually draw the glyph. The caller
+    /// must call [`submit_glyphs`](UiPass::submit_glyphs) to actually draw the glyphs.
     #[allow(clippy::too_many_arguments)]
-    pub fn append_glyph(
+    pub fn add_glyph_no_draw(
         &mut self,
         renderer: &Renderer,
         font_system: &mut cosmic_text::FontSystem,
@@ -185,7 +286,7 @@ impl UiPass {
             }
         }
 
-        self.append_glyph_instance(GlyphInstance {
+        self.add_glyph_instance_no_draw(GlyphInstance {
             position: IVec2::new(
                 physical.x + cached_glyph.placement.left,
                 (run.line_height * scale).round() as i32 + physical.y - cached_glyph.placement.top,
@@ -207,8 +308,11 @@ impl UiPass {
     /// # Remarks
     ///
     /// This function ignore errors.
+    ///
+    /// This function does not add a rendering command to actually draw the glyphs. The caller must
+    /// call [`submit_glyphs`](UiPass::submit_glyphs) to actually draw the glyphs.
     #[allow(clippy::too_many_arguments)]
-    pub fn append_text_buffer(
+    pub fn add_text_buffer_no_draw(
         &mut self,
         renderer: &Renderer,
         font_system: &mut cosmic_text::FontSystem,
@@ -220,7 +324,7 @@ impl UiPass {
     ) {
         for run in text.layout_runs() {
             for glyph in run.glyphs {
-                _ = self.append_glyph(
+                _ = self.add_glyph_no_draw(
                     renderer,
                     font_system,
                     position,
@@ -296,7 +400,7 @@ impl FromApp for UiPass {
 
         let rects_shader_module = renderer
             .device()
-            .create_shader_module(wgpu::include_wgsl!("ui_rect.wgsl"));
+            .create_shader_module(wgpu::include_wgsl!("rect.wgsl"));
 
         let rects_pipeline =
             renderer
@@ -308,7 +412,7 @@ impl FromApp for UiPass {
                         module: &rects_shader_module,
                         entry_point: None,
                         compilation_options: wgpu::PipelineCompilationOptions::default(),
-                        buffers: &[UiRectInstance::LAYOUT],
+                        buffers: &[RectInstance::LAYOUT],
                     },
                     primitive: wgpu::PrimitiveState {
                         topology: wgpu::PrimitiveTopology::TriangleStrip,
@@ -391,6 +495,7 @@ impl FromApp for UiPass {
             glyphs_pipeline,
             swash_scale_context: swash::scale::ScaleContext::new(),
             text_atlas,
+            ui_commands: Vec::new(),
         }
     }
 }
@@ -399,6 +504,7 @@ impl FromApp for UiPass {
 ///
 /// This should be called at the begining of the rendering logic.
 pub(crate) fn prepare_frame(mut pass: Glob<&mut UiPass>) {
+    pass.ui_commands.clear();
     pass.rects.clear();
     pass.glyphs.clear();
     pass.text_atlas.trim();
@@ -422,6 +528,8 @@ pub(crate) fn submit_frame(
     target: Glob<&OutputTarget>,
     mut cbs: Glob<&mut PendingCommandBuffers>,
 ) {
+    let pass = &mut *pass;
+
     if pass.view_changed {
         let mut buf = renderer
             .queue()
@@ -465,66 +573,68 @@ pub(crate) fn submit_frame(
 
     rp.set_bind_group(0, &pass.view_bind_group, &[]);
 
-    if !pass.rects.is_empty() {
-        pass.rects
-            .sort_unstable_by_key(|instance| std::cmp::Reverse(instance.z_index));
+    pass.ui_commands.sort_unstable_by_key(|cmd| cmd.z_index);
 
-        let rects_bytes: &[u8] = bytemuck::cast_slice(&pass.rects);
+    for cmd in &pass.ui_commands {
+        match cmd.kind {
+            UiCommandKind::Rects => {
+                let rects_bytes: &[u8] = bytemuck::cast_slice(&pass.rects);
 
-        if pass
-            .rects_buf
-            .as_ref()
-            .is_none_or(|buf| buf.size() < rects_bytes.len() as u64)
-        {
-            pass.rects_buf = Some(renderer.device().create_buffer_init(
-                &wgpu::util::BufferInitDescriptor {
-                    label: Some("UiRectInstance Instance Buffer"),
-                    contents: rects_bytes,
-                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                },
-            ));
-        } else {
-            let buf = pass.rects_buf.as_ref().unwrap();
-            let mut buf = renderer
-                .queue()
-                .write_buffer_with(buf, 0, NonZero::new(rects_bytes.len() as u64).unwrap())
-                .unwrap();
-            buf.copy_from_slice(rects_bytes);
+                if pass
+                    .rects_buf
+                    .as_ref()
+                    .is_none_or(|buf| buf.size() < rects_bytes.len() as u64)
+                {
+                    pass.rects_buf = Some(renderer.device().create_buffer_init(
+                        &wgpu::util::BufferInitDescriptor {
+                            label: Some("UiRectInstance Instance Buffer"),
+                            contents: rects_bytes,
+                            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                        },
+                    ));
+                } else {
+                    let buf = pass.rects_buf.as_ref().unwrap();
+                    let mut buf = renderer
+                        .queue()
+                        .write_buffer_with(buf, 0, NonZero::new(rects_bytes.len() as u64).unwrap())
+                        .unwrap();
+                    buf.copy_from_slice(rects_bytes);
+                }
+
+                rp.set_pipeline(&pass.rects_pipeline);
+                rp.set_vertex_buffer(0, pass.rects_buf.as_ref().unwrap().slice(..));
+                rp.draw(0..4, 0..pass.rects.len() as u32);
+            }
+            UiCommandKind::Glyphs => {
+                let glyphs_bytes: &[u8] = bytemuck::cast_slice(&pass.glyphs);
+
+                if pass
+                    .glyphs_buf
+                    .as_ref()
+                    .is_none_or(|buf| buf.size() < glyphs_bytes.len() as u64)
+                {
+                    pass.glyphs_buf = Some(renderer.device().create_buffer_init(
+                        &wgpu::util::BufferInitDescriptor {
+                            label: Some("GlyphInstance Instance Buffer"),
+                            contents: glyphs_bytes,
+                            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                        },
+                    ));
+                } else {
+                    let buf = pass.glyphs_buf.as_ref().unwrap();
+                    let mut buf = renderer
+                        .queue()
+                        .write_buffer_with(buf, 0, NonZero::new(glyphs_bytes.len() as u64).unwrap())
+                        .unwrap();
+                    buf.copy_from_slice(glyphs_bytes);
+                }
+
+                rp.set_pipeline(&pass.glyphs_pipeline);
+                rp.set_bind_group(1, pass.text_atlas.bind_group(), &[]);
+                rp.set_vertex_buffer(0, pass.glyphs_buf.as_ref().unwrap().slice(..));
+                rp.draw(0..4, 0..pass.glyphs.len() as u32);
+            }
         }
-
-        let glyphs_bytes: &[u8] = bytemuck::cast_slice(&pass.glyphs);
-
-        if pass
-            .glyphs_buf
-            .as_ref()
-            .is_none_or(|buf| buf.size() < glyphs_bytes.len() as u64)
-        {
-            pass.glyphs_buf = Some(renderer.device().create_buffer_init(
-                &wgpu::util::BufferInitDescriptor {
-                    label: Some("GlyphInstance Instance Buffer"),
-                    contents: glyphs_bytes,
-                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                },
-            ));
-        } else {
-            let buf = pass.glyphs_buf.as_ref().unwrap();
-            let mut buf = renderer
-                .queue()
-                .write_buffer_with(buf, 0, NonZero::new(glyphs_bytes.len() as u64).unwrap())
-                .unwrap();
-            buf.copy_from_slice(glyphs_bytes);
-        }
-
-        rp.set_pipeline(&pass.rects_pipeline);
-        rp.set_vertex_buffer(0, pass.rects_buf.as_ref().unwrap().slice(..));
-        rp.draw(0..4, 0..pass.rects.len() as u32);
-
-        rp.set_pipeline(&pass.glyphs_pipeline);
-        rp.set_bind_group(1, pass.text_atlas.bind_group(), &[]);
-        rp.set_vertex_buffer(0, pass.glyphs_buf.as_ref().unwrap().slice(..));
-        rp.draw(0..4, 0..pass.glyphs.len() as u32);
-    } else {
-        pass.rects_buf = None;
     }
 
     drop(rp);

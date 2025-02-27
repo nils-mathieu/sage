@@ -146,8 +146,32 @@ pub struct Query<'w, P: QueryParam> {
 }
 
 impl<'w, P: QueryParam> Query<'w, P> {
-    /// Creates a new iterator that returns the entities that match the query's filter.
-    pub fn iter(&mut self) -> QueryIter<'w, P> {
+    /// Returns an iterator over the query's results.
+    #[inline]
+    pub fn iter_mut(&mut self) -> QueryIter<'w, P> {
+        unsafe { self.iter_unchecked() }
+    }
+
+    /// Returns an iterator over the query's results.
+    #[inline]
+    pub fn iter(&self) -> QueryIter<'w, P>
+    where
+        P: ReadOnlyQueryParam,
+    {
+        unsafe { self.iter_unchecked() }
+    }
+
+    /// Returns an iterator over the query's results.
+    ///
+    /// This method is unsafe because it can lead to aliasing mutable references if called multiple
+    /// times.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the returned iterator is not aliased by any other mutable
+    /// references.
+    #[inline]
+    pub unsafe fn iter_unchecked(&self) -> QueryIter<'w, P> {
         QueryIter {
             state: &self.state.param_state,
             iter_state: unsafe { P::create_iter_state(&self.state.param_state, self.app) },
@@ -175,7 +199,10 @@ where
 
     #[inline]
     unsafe fn fetch<'w>(state: &'w mut Self::State, app: AppCell<'w>) -> Self::Item<'w> {
-        unsafe { state.make_query(app) }
+        unsafe {
+            state.update_matched_archetypes(app.get_ref());
+            state.make_query(app)
+        }
     }
 }
 

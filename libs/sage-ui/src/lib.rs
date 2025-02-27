@@ -5,11 +5,11 @@ pub use cosmic_text;
 mod ui_node;
 pub use self::ui_node::*;
 
-mod brush;
-pub use self::brush::*;
-
 mod fonts;
 pub use self::fonts::*;
+
+mod background;
+pub use self::background::*;
 
 use {
     sage_core::{RENDER_SCHEDULE, app::App, schedule::SystemConfig},
@@ -35,6 +35,13 @@ pub fn initialize(app: &mut App) {
             .tag(SUBMIT_FRAME)
             .run_after(PREPARE_FRAME),
         self::rendering::submit_frame,
+    );
+    app.add_system(
+        RENDER_SCHEDULE,
+        SystemConfig::default()
+            .run_before(SUBMIT_FRAME)
+            .run_after(PREPARE_FRAME),
+        self::background::draw_backgrounds,
     );
     app.add_event_handler(self::rendering::update_view_resolution);
 }

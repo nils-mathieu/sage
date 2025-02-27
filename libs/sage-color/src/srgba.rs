@@ -188,6 +188,12 @@ impl Srgba8 {
             alpha: 255,
         }
     }
+
+    /// Returns whether the color is transparent.
+    #[inline]
+    pub const fn is_transparent(&self) -> bool {
+        self.alpha == 0
+    }
 }
 
 impl From<Srgba> for Srgba8 {

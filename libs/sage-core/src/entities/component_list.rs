@@ -20,13 +20,6 @@ where
     }
 }
 
-impl ComponentSet for () {
-    #[inline]
-    fn has_component(&self, _uuid: Uuid) -> bool {
-        false
-    }
-}
-
 /// A trait for types that can insert a collection of components into an entity.
 ///
 /// # Safety
@@ -78,12 +71,50 @@ where
     }
 }
 
-unsafe impl ComponentList for () {
-    fn register(
-        &self,
-        _registry: &mut ComponentRegistry,
-        _callback: &mut impl FnMut(&'static ComponentInfo),
-    ) {
-    }
-    fn write(self, _move_out: &mut impl FnMut(Uuid, OpaquePtr)) {}
+macro_rules! impl_tuple {
+    ($($name:ident)*) => {
+        #[allow(unused_variables, non_snake_case)]
+        impl<$($name,)*> ComponentSet for ($($name,)*)
+        where
+            $($name: ComponentList,)*
+        {
+            #[inline]
+            fn has_component(&self, uuid: Uuid) -> bool {
+                let ($($name,)*) = self;
+                $($name.has_component(uuid) ||)* false
+            }
+        }
+
+        #[allow(unused_variables, non_snake_case)]
+        unsafe impl<$($name,)*> ComponentList for ($($name,)*)
+        where
+            $($name: ComponentList,)*
+        {
+            #[inline]
+            fn register(
+                &self,
+                registry: &mut ComponentRegistry,
+                callback: &mut impl FnMut(&'static ComponentInfo),
+            ) {
+                let ($($name,)*) = self;
+                $($name.register(registry, callback);)*
+            }
+
+            #[inline]
+            fn write(self, move_out: &mut impl FnMut(Uuid, OpaquePtr)) {
+                let ($($name,)*) = self;
+                $($name.write(move_out);)*
+            }
+        }
+    };
 }
+
+impl_tuple!();
+impl_tuple!(A);
+impl_tuple!(A B);
+impl_tuple!(A B C);
+impl_tuple!(A B C D);
+impl_tuple!(A B C D E);
+impl_tuple!(A B C D E F);
+impl_tuple!(A B C D E F G);
+impl_tuple!(A B C D E F G H);

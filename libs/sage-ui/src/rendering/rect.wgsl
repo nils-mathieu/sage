@@ -12,11 +12,11 @@ struct VertexInput {
 
     // UiRectInstance
 
-    @location(0) position: vec2f,
-    @location(1) size: vec2f,
-    @location(2) color: vec4f,
-    @location(3) corner_radius: vec4f,
-    @location(4) border_size: f32,
+    @location(0) position: vec2i,
+    @location(1) size: vec2u,
+    @location(2) corner_radius: vec4f,
+    @location(3) border_thickness: f32,
+    @location(4) color: vec4f,
 }
 
 struct VertexOutput {
@@ -26,27 +26,24 @@ struct VertexOutput {
 
     @location(1) @interpolate(linear) point: vec2f, // Relative to the rectangle's center.
     @location(2) @interpolate(flat) size: vec2f,
-    @location(3) @interpolate(flat) border_size: f32,
+    @location(3) @interpolate(flat) border_thickness: f32,
     @location(4) @interpolate(flat) color: vec4f,
     @location(5) @interpolate(flat) corner_radius: vec4f,
 }
 
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
-    let vertex_pos = vec2f(
-        f32(in.vertex_index & 1u),
-        f32(in.vertex_index >> 1u)
-    );
+    let vertex_pos = vec2u(in.vertex_index & 1u, in.vertex_index >> 1u);
 
     // This is still upside-down because Y points up in WGSL.
-    let clip = (in.position + vertex_pos * in.size) / vec2f(view.resolution) * 2.0 - 1.0;
+    let clip = vec2f(in.position + vec2i(vertex_pos * in.size)) / vec2f(view.resolution) * 2.0 - 1.0;
 
     var out: VertexOutput;
     out.clip_position = vec4f(clip.x, -clip.y, 0.0, 1.0);
-    out.uv = vertex_pos;
-    out.point = vertex_pos * in.size - in.size * 0.5;
-    out.size = in.size;
-    out.border_size = in.border_size;
+    out.uv = vec2f(vertex_pos);
+    out.point = vec2f(vertex_pos * in.size) - vec2f(in.size) * 0.5;
+    out.size = vec2f(in.size);
+    out.border_thickness = in.border_thickness;
     out.color = in.color;
     out.corner_radius = in.corner_radius;
     return out;
@@ -109,7 +106,7 @@ fn sd_inset_rounded_rect(point: vec2f, size: vec2f, radii: vec4f, inset: vec4f) 
 // Draws the rectangle as a border.
 fn rounded_border(in: VertexOutput) -> f32 {
     let outer = sd_rounded_rect(in.point, in.size, in.corner_radius);
-    let inner = sd_inset_rounded_rect(in.point, in.size, in.corner_radius, vec4f(in.border_size));
+    let inner = sd_inset_rounded_rect(in.point, in.size, in.corner_radius, vec4f(in.border_thickness));
     let dist = max(outer, -inner);
     return saturate(0.5 - dist);
 }
@@ -123,7 +120,7 @@ fn rounded_rect(in: VertexOutput) -> f32 {
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     var t = 0.0;
-    if (in.border_size == 0.0) {
+    if (in.border_thickness == 0.0) {
         t = rounded_rect(in);
     } else {
         t = rounded_border(in);

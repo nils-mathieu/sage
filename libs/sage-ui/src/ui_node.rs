@@ -1,5 +1,5 @@
 use {
-    glam::Vec2,
+    glam::{IVec2, UVec2},
     sage_core::{TypeUuid, Uuid, entities::Component},
 };
 
@@ -9,13 +9,13 @@ pub struct UiNodeMetrics {
     /// The Z-index of the node.
     pub z_index: i32,
     /// The computed size of the node in physical pixels.
-    pub size: Vec2,
+    pub size: UVec2,
     /// The computed position of the node, in physical pixels.
-    pub position: Vec2,
+    pub position: IVec2,
     /// The offset of the baseline of the node from the top-left corner, in physical pixels.
     ///
     /// The baseline is the imaginary line that the last line displayed by the node is aligned to.
-    pub baseline: Vec2,
+    pub baseline: IVec2,
 }
 
 unsafe impl TypeUuid for UiNodeMetrics {

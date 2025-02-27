@@ -111,9 +111,7 @@ impl<I, O> RawSystem<I, O> {
     /// The caller must ensure that the provided [`App`] is the one associated with this
     /// system.
     pub unsafe fn apply_deferred(&mut self, app: &mut App) {
-        unsafe {
-            (self.vtable.apply_deferred_fn)(self.data, app);
-        }
+        unsafe { (self.vtable.apply_deferred_fn)(self.data, app) };
     }
 }
 

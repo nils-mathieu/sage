@@ -53,8 +53,8 @@ pub const ComponentInfo = struct {
     ///
     /// - `self`: The component instance being removed.
     ///
-    /// - `engine`: The engine in which the component was registered.
-    deinit: ?*const fn (self: *anyopaque, engine: *Engine) void,
+    /// - `allocator`: The allocator that the engine is using.
+    deinit: ?*const fn (self: *anyopaque, allocator: Allocator) void,
 
     /// A function to be called when the component is inserted into an entity.
     ///
@@ -87,9 +87,9 @@ pub const ComponentInfo = struct {
     /// See `registerZigType` for more information.
     pub fn of(comptime T: type) ComponentInfo {
         const Fns = struct {
-            fn deinit(self: *anyopaque, engine: *Engine) void {
+            fn deinit(self: *anyopaque, allocator: Allocator) void {
                 if (!@hasDecl(T, "sageDeinit")) return;
-                T.sageDeinit(@alignCast(@ptrCast(self)), engine);
+                T.sageDeinit(@alignCast(@ptrCast(self)), allocator);
             }
 
             fn onInsertHook(self: *anyopaque, engine: *Engine, entity: Entity) void {
@@ -146,8 +146,8 @@ test "ComponentInfo.of customDeinit" {
     const TestComponent = struct {
         deinit_count: *u32,
 
-        pub fn sageDeinit(self: *@This(), engine: *Engine) void {
-            _ = engine;
+        pub fn sageDeinit(self: *@This(), allocator: Allocator) void {
+            _ = allocator;
             self.deinit_count.* += 1;
         }
     };
@@ -158,10 +158,9 @@ test "ComponentInfo.of customDeinit" {
     try std.testing.expectEqual(null, info.onRemoveHook);
     try std.testing.expectEqual(null, info.onInsertHook);
 
-    const fake_engine: *Engine = @ptrFromInt(@alignOf(Engine));
     var deinit_count: u32 = 0;
     var val = TestComponent{ .deinit_count = &deinit_count };
-    info.deinit.?(&val, fake_engine);
+    info.deinit.?(&val, std.testing.allocator);
 
     try std.testing.expectEqual(1, deinit_count);
 }
@@ -180,6 +179,16 @@ pub const ComponentId = usize;
 components: ArrayListUnmanaged(ComponentInfo),
 /// Maps UUIDs to component IDs.
 uuids: Uuid.MapUnmanaged(ComponentId),
+
+/// Releases the resources that have been allocated for the component registry.
+///
+/// # Valid Usage
+///
+/// The component registry must no longer be used after this function is called.
+pub fn deinit(self: *Self, a: Allocator) void {
+    self.components.deinit(a);
+    self.uuids.deinit(a);
+}
 
 /// Registers a Zig type as a component.
 ///
@@ -215,7 +224,7 @@ uuids: Uuid.MapUnmanaged(ComponentId),
 /// ## `sageDeinit`
 ///
 /// ```zig
-/// fn sageDeinit(self: *Self, engine: *Engine) void {
+/// fn sageDeinit(self: *Self, allocator: Allocator) void {
 ///     // Perform any cleanup here
 /// }
 /// ```
@@ -270,4 +279,13 @@ pub fn registerZigType(
         return entry.value_ptr.*;
     entry.value_ptr.* = self.components.items.len;
     try self.components.append(a, ComponentInfo.of(T));
+}
+
+/// Returns the `ComponentInfo` associated with the provided component ID.
+///
+/// # Valid Usage
+///
+/// The component ID must be valid and must have been registered.
+pub inline fn get(self: Self, id: ComponentId) ComponentInfo {
+    return self.components.items[id];
 }

@@ -1,0 +1,11 @@
+.{
+    .name = .sage,
+    .fingerprint = 0x6bf19cebcd09d6b,
+    .version = "0.1.0",
+    .paths = .{
+        "libs",
+        "bins",
+        "build.zig",
+        "build.zig.zon",
+    },
+}

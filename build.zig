@@ -24,18 +24,6 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(sage_core_test).step);
 
     //
-    // `sage_input`
-    //
-    const sage_input_mod = b.addModule("sage_input", .{
-        .root_source_file = b.path("libs/sage_input/sage_input.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const sage_input_test = addTestWithCustomRunner(b, sage_input_mod);
-    check_step.dependOn(&sage_input_test.step);
-    test_step.dependOn(&b.addRunArtifact(sage_input_test).step);
-
-    //
     // `sage_window`
     //
     const sage_window_mod = b.addModule("sage_window", .{
@@ -43,8 +31,6 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    sage_window_mod.addImport("sage_input", sage_input_mod);
-    sage_window_mod.addImport("sage_core", sage_core_mod);
     const sage_window_test = addTestWithCustomRunner(b, sage_window_mod);
     check_step.dependOn(&sage_window_test.step);
     test_step.dependOn(&b.addRunArtifact(sage_window_test).step);
@@ -57,9 +43,8 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    sage_mod.addImport("sage_window", sage_window_mod);
     sage_mod.addImport("sage_core", sage_core_mod);
-    sage_mod.addImport("sage_input", sage_input_mod);
+    sage_mod.addImport("sage_window", sage_window_mod);
     const sage_test = addTestWithCustomRunner(b, sage_mod);
     check_step.dependOn(&sage_test.step);
     test_step.dependOn(&b.addRunArtifact(sage_test).step);

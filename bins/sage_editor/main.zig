@@ -3,7 +3,10 @@ const sage = @import("sage");
 
 /// The glorious entry point of the Sage editor.
 pub fn main() void {
-    sage.run(initialize);
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    sage.run(gpa.allocator(), initialize);
 }
 
 /// Initializes the editor.
